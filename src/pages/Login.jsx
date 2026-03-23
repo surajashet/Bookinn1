@@ -5,14 +5,44 @@ const ACCENT = "#4A7C72";
 
 export default function Login() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  const [formData, setFormData] = useState({ email: "", password: "" });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    // Simulate authentication
-    localStorage.setItem("token", "simulated-jwt-token"); 
-    // Navigate to the dashboard route defined in App.jsx
-    navigate("/client/dashboard"); 
+    setLoading(true);
+    setError("");
+
+    try {
+      const response = await fetch('http://localhost:3001/api/users/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        localStorage.setItem("token", data.token);
+        localStorage.setItem("user", JSON.stringify(data.user));
+        
+        // Redirect based on user role
+        if (data.user.role === 'admin') {
+          navigate("/admin/dashboard");
+        } else if (data.user.role === 'staff') {
+          navigate("/staff/dashboard");
+        } else {
+          navigate("/client/dashboard");
+        }
+      } else {
+        setError(data.message || "Login failed");
+      }
+    } catch (err) {
+      setError("Connection error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -34,14 +64,29 @@ export default function Login() {
           <p style={{ fontFamily: "'CabinetGrotesk', sans-serif", color: "#A09890", fontSize: 14 }}>Enter your credentials to access your dashboard.</p>
         </div>
 
+        {error && (
+          <div style={{ 
+            backgroundColor: "#fee", 
+            color: "#c00", 
+            padding: "12px", 
+            borderRadius: "8px", 
+            marginBottom: "20px",
+            fontFamily: "'CabinetGrotesk', sans-serif",
+            fontSize: "14px"
+          }}>
+            {error}
+          </div>
+        )}
+
         <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: 24 }}>
           <div>
             <label style={{ display: "block", fontFamily: "'CabinetGrotesk', sans-serif", fontSize: 10, textTransform: "uppercase", letterSpacing: ".15em", marginBottom: 8, color: ACCENT }}>Email</label>
             <input 
               type="email" 
               required 
+              value={formData.email}
               style={{ width: "100%", padding: "14px 20px", borderRadius: 12, border: "1px solid #E4DDD4", outline: "none", fontFamily: "'CabinetGrotesk', sans-serif" }} 
-              onChange={e => setEmail(e.target.value)}
+              onChange={e => setFormData({...formData, email: e.target.value})}
             />
           </div>
           <div>
@@ -49,11 +94,29 @@ export default function Login() {
             <input 
               type="password" 
               required 
+              value={formData.password}
               style={{ width: "100%", padding: "14px 20px", borderRadius: 12, border: "1px solid #E4DDD4", outline: "none" }} 
+              onChange={e => setFormData({...formData, password: e.target.value})}
             />
           </div>
-          <button type="submit" style={{ background: ACCENT, color: "#fff", padding: "16px", borderRadius: 999, border: "none", fontFamily: "'CabinetGrotesk', sans-serif", fontSize: 11, letterSpacing: ".2em", textTransform: "uppercase", cursor: "pointer", marginTop: 12 }}>
-            Sign In
+          <button 
+            type="submit" 
+            disabled={loading}
+            style={{ 
+              background: loading ? '#95B6B0' : ACCENT, 
+              color: "#fff", 
+              padding: "16px", 
+              borderRadius: 999, 
+              border: "none", 
+              fontFamily: "'CabinetGrotesk', sans-serif", 
+              fontSize: 11, 
+              letterSpacing: ".2em", 
+              textTransform: "uppercase", 
+              cursor: loading ? 'not-allowed' : "pointer", 
+              marginTop: 12 
+            }}
+          >
+            {loading ? "SIGNING IN..." : "SIGN IN"}
           </button>
         </form>
 

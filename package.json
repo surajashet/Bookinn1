@@ -1,26 +1,37 @@
 {
-
   "name": "hotel-crm-backend",
   "version": "1.0.0",
   "type": "module",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-  "dev": "nodemon src/app.js"
-},
-
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+    "dev:backend": "nodemon server.js",
+    "dev:frontend": "vite",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
   "dependencies": {
+    "@fortawesome/free-solid-svg-icons": "^7.2.0",
+    "@fortawesome/react-fontawesome": "^3.3.0",
     "@supabase/supabase-js": "^2.97.0",
+    "axios": "^1.13.6",
+    "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
-    "pg": "^8.18.0"
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.18.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.30.3"
   },
   "devDependencies": {
-    "nodemon": "^3.1.11"
-
+    "@vitejs/plugin-react": "^4.2.0",
+    "autoprefixer": "^10.4.27",
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.1.11",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^4.2.1",
+    "vite": "^5.0.0"
   }
 }

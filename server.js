@@ -1,15 +1,66 @@
 import express from "express";
 import cors from "cors";
-import userRoutes from "./routes/user.routes.js";
-import taskRoutes from "./routes/task.routes.js";
-const app = express();
+import dotenv from "dotenv";
 
-app.use(cors());
+// Import all routes
+import userRoutes from "./routes/user.routes.js";
+import roomRoutes from "./routes/room.routes.js";
+import bookingRoutes from "./routes/booking.routes.js";
+import taskRoutes from "./routes/task.routes.js";
+import invoiceRoutes from "./routes/invoice.routes.js";
+import paymentRoutes from "./routes/payment.routes.js";
+import clientRoutes from "./routes/client.routes.js";
+import uploadRoutes from "./routes/upload.routes.js";
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Middleware
+app.use(cors({
+  origin: ["http://localhost:3000", "http://localhost:5173"],
+  credentials: true
+}));
 app.use(express.json());
 
+// Routes
 app.use("/api/users", userRoutes);
+app.use("/api/rooms", roomRoutes);
+app.use("/api/bookings", bookingRoutes);
 app.use("/api/tasks", taskRoutes);
+app.use("/api/invoices", invoiceRoutes);
+app.use("/api/payments", paymentRoutes);
+app.use("/api/client", clientRoutes);
+app.use("/api/upload", uploadRoutes);
 
-app.listen(3000, () => {
-    console.log("Server running on port 3000");
+// Health check endpoint
+app.get("/api/health", (req, res) => {
+  res.json({ 
+    success: true, 
+    message: "BookInn API is running",
+    timestamp: new Date().toISOString()
   });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ 
+    success: false,
+    message: "Route not found" 
+  });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error("Server Error:", err);
+  res.status(500).json({ 
+    success: false,
+    message: "Internal server error"
+  });
+});
+
+app.listen(PORT, () => {
+  console.log(`🚀 Backend server running on http://localhost:${PORT}`);
+  console.log(`📚 API available at http://localhost:${PORT}/api`);
+});

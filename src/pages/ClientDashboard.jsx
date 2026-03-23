@@ -1,8 +1,7 @@
-/// FILE: src/pages/ClientDashboard.jsx
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 const get = p => fetch(`${BASE_URL}${p}`, { headers: { "Content-Type":"application/json", Authorization:`Bearer ${localStorage.getItem("token")||""}` } }).then(r => { if(!r.ok) throw new Error(r.statusText); return r.json(); });
 
 const fmtDate = d => new Date(d).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
@@ -161,7 +160,7 @@ export default function ClientDashboard() {
           )}
         </section>
 
-        {/* RECENT BOOKINGS (Restored Section) */}
+        {/* RECENT BOOKINGS */}
         <section style={{ paddingBottom:96, borderTop:"1px solid #E4DDD4", paddingTop:80 }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end", marginBottom:48 }}>
             <div>
