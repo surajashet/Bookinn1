@@ -1,8 +1,13 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
+import VerifyEmail from './pages/VerifyEmail';
+import LandingPage from './pages/LandingPage';
 import ClientDashboard from './pages/ClientDashboard';
 import ClientRooms from './pages/ClientRooms';
+import ClientBooking from './pages/ClientBooking';
+import ClientBookings from './pages/ClientBookings';
 import AdminDashboard from './pages/admin/AdminDashboard';
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -23,11 +28,39 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 function App() {
   return (
     <BrowserRouter>
+      <Toaster 
+        position="top-center"
+        reverseOrder={false}
+        toastOptions={{
+          duration: 4000,
+          style: {
+            background: '#363636',
+            color: '#fff',
+          },
+          success: {
+            duration: 4000,
+            style: {
+              background: '#4A7C72',
+              color: '#fff',
+            },
+          },
+          error: {
+            duration: 4000,
+            style: {
+              background: '#B45C5C',
+              color: '#fff',
+            },
+          },
+        }}
+      />
       <Routes>
-        <Route path="/" element={<Navigate to="/login" />} />
+        {/* Public Routes */}
+        <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/verify" element={<VerifyEmail />} />
         
+        {/* Client Routes */}
         <Route 
           path="/client/dashboard" 
           element={
@@ -44,6 +77,24 @@ function App() {
             </ProtectedRoute>
           } 
         />
+        <Route 
+          path="/client/book" 
+          element={
+            <ProtectedRoute allowedRoles={['customer']}>
+              <ClientBooking />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/client/bookings" 
+          element={
+            <ProtectedRoute allowedRoles={['customer']}>
+              <ClientBookings />
+            </ProtectedRoute>
+          } 
+        />
+        
+        {/* Admin Routes */}
         <Route 
           path="/admin/dashboard" 
           element={

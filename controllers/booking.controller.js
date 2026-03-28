@@ -1,4 +1,5 @@
 import supabase from "../config/supabaseClient.js";
+import { sendBookingConfirmation, sendBookingCancellation } from "../utils/emailService.js";
 
 // Create a new booking
 export const createBooking = async (req, res) => {
@@ -8,17 +9,44 @@ export const createBooking = async (req, res) => {
       user_id,
       check_in_date,
       check_out_date,
+      guests,
+      total_price,
       booking_status = 'confirmed'
     } = req.body;
 
+    console.log("📝 Creating booking with data:", { room_id, user_id, check_in_date, check_out_date });
+
+    // Validate dates
+    if (!check_in_date || !check_out_date) {
+      return res.status(400).json({
+        success: false,
+        error: "Check-in and check-out dates are required"
+      });
+    }
+
+    // Get user details for email
+    console.log("👤 Fetching user details for ID:", user_id);
+    const { data: user, error: userError } = await supabase
+      .from("Users")
+      .select("email, username")
+      .eq("user_id", user_id)
+      .single();
+
+    if (userError) {
+      console.error("❌ Error fetching user:", userError);
+    } else {
+      console.log("✅ User found:", user.email);
+    }
+
     // Check if room exists and is available
+    console.log("🏨 Checking room availability for ID:", room_id);
     const { data: room, error: roomError } = await supabase
       .from("rooms")
-      .select("room_status, base_price, room_number")
+      .select("room_status, base_price, room_number, room_type")
       .eq("room_id", room_id)
       .single();
 
-    if (roomError) {
+    if (roomError || !room) {
       return res.status(404).json({ 
         success: false,
         error: "Room not found" 
@@ -33,6 +61,7 @@ export const createBooking = async (req, res) => {
     }
 
     // Check for conflicting bookings
+    console.log("🔍 Checking for conflicting bookings...");
     const { data: conflictingBookings, error: conflictError } = await supabase
       .from("bookings")
       .select("booking_id")
@@ -43,6 +72,7 @@ export const createBooking = async (req, res) => {
     if (conflictError) throw conflictError;
 
     if (conflictingBookings && conflictingBookings.length > 0) {
+      console.log("⚠️ Conflicting bookings found:", conflictingBookings.length);
       return res.status(400).json({ 
         success: false,
         error: "Room is not available for selected dates" 
@@ -50,6 +80,7 @@ export const createBooking = async (req, res) => {
     }
 
     // Create booking
+    console.log("💾 Creating booking in database...");
     const { data: booking, error } = await supabase
       .from("bookings")
       .insert([{
@@ -57,15 +88,20 @@ export const createBooking = async (req, res) => {
         user_id,
         check_in_date,
         check_out_date,
-        booking_status
+        guests: guests || 1,
+        total_price: total_price || 0,
+        booking_status,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       }])
       .select(`
         *,
         rooms (*),
-        Users (*)
+        Users (user_id, username, email)
       `);
 
     if (error) throw error;
+    console.log("✅ Booking created with ID:", booking[0].booking_id);
 
     // Update room status to reserved
     await supabase
@@ -76,15 +112,21 @@ export const createBooking = async (req, res) => {
       })
       .eq("room_id", room_id);
 
-    // Log activity
-    await supabase
-      .from("Activity Logs")
-      .insert([{
-        user_id,
-        action: "CREATE_BOOKING",
-        entity_type: "booking",
-        description: `Booking created for room ${room.room_number}`
-      }]);
+    // Send confirmation email
+    if (booking && booking[0] && user) {
+      console.log("📧 Attempting to send confirmation email to:", user.email);
+      console.log("📧 Email config - USER:", process.env.EMAIL_USER ? "Set" : "Not set");
+      console.log("📧 Email config - PASS:", process.env.EMAIL_PASS ? "Set" : "Not set");
+      
+      const emailResult = await sendBookingConfirmation(booking[0], user, room);
+      console.log("📧 Email send result:", emailResult ? "SUCCESS" : "FAILED");
+    } else {
+      console.log("⚠️ Email not sent - missing data:", {
+        bookingExists: !!booking,
+        bookingDataExists: !!booking?.[0],
+        userExists: !!user
+      });
+    }
 
     res.status(201).json({
       success: true,
@@ -92,56 +134,7 @@ export const createBooking = async (req, res) => {
       data: booking[0]
     });
   } catch (error) {
-    console.error("Create booking error:", error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message 
-    });
-  }
-};
-
-// Get bookings with filters
-export const getBookings = async (req, res) => {
-  try {
-    const { status, user_id, room_id, start_date, end_date } = req.query;
-
-    let query = supabase
-      .from("bookings")
-      .select(`
-        *,
-        rooms (*),
-        Users (user_id, username, email)
-      `);
-
-    if (status) {
-      query = query.eq("booking_status", status);
-    }
-    if (user_id) {
-      query = query.eq("user_id", user_id);
-    }
-    if (room_id) {
-      query = query.eq("room_id", room_id);
-    }
-    if (start_date) {
-      query = query.gte("check_in_date", start_date);
-    }
-    if (end_date) {
-      query = query.lte("check_out_date", end_date);
-    }
-
-    query = query.order("created_at", { ascending: false });
-
-    const { data, error } = await query;
-
-    if (error) throw error;
-
-    res.json({
-      success: true,
-      count: data.length,
-      data: data
-    });
-  } catch (error) {
-    console.error("Get bookings error:", error);
+    console.error("❌ Create booking error:", error);
     res.status(500).json({ 
       success: false,
       error: error.message 
@@ -179,34 +172,42 @@ export const getUserBookings = async (req, res) => {
   }
 };
 
-// Get booking by ID
-export const getBookingById = async (req, res) => {
+// Get all bookings (admin)
+export const getAllBookings = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { status, start_date, end_date } = req.query;
 
-    const { data, error } = await supabase
+    let query = supabase
       .from("bookings")
       .select(`
         *,
         rooms (*),
         Users (user_id, username, email)
-      `)
-      .eq("booking_id", id)
-      .single();
+      `);
 
-    if (error) {
-      return res.status(404).json({ 
-        success: false,
-        error: "Booking not found" 
-      });
+    if (status) {
+      query = query.eq("booking_status", status);
     }
+    if (start_date) {
+      query = query.gte("check_in_date", start_date);
+    }
+    if (end_date) {
+      query = query.lte("check_out_date", end_date);
+    }
+
+    query = query.order("created_at", { ascending: false });
+
+    const { data, error } = await query;
+
+    if (error) throw error;
 
     res.json({
       success: true,
+      count: data.length,
       data: data
     });
   } catch (error) {
-    console.error("Get booking by ID error:", error);
+    console.error("Get all bookings error:", error);
     res.status(500).json({ 
       success: false,
       error: error.message 
@@ -228,10 +229,10 @@ export const updateBookingStatus = async (req, res) => {
       });
     }
 
-    // Get current booking to know room_id
+    // Get current booking
     const { data: currentBooking } = await supabase
       .from("bookings")
-      .select("room_id")
+      .select("room_id, booking_status")
       .eq("booking_id", id)
       .single();
 
@@ -257,7 +258,7 @@ export const updateBookingStatus = async (req, res) => {
       roomStatus = 'reserved';
     }
 
-    if (roomStatus && currentBooking) {
+    if (roomStatus) {
       await supabase
         .from("rooms")
         .update({ 
@@ -307,6 +308,31 @@ export const cancelBooking = async (req, res) => {
       })
       .eq("room_id", data.room_id);
 
+    // Send cancellation email
+    try {
+      // Get user details
+      const { data: user } = await supabase
+        .from("Users")
+        .select("email, username")
+        .eq("user_id", data.user_id)
+        .single();
+      
+      // Get room details
+      const { data: room } = await supabase
+        .from("rooms")
+        .select("room_number, room_type")
+        .eq("room_id", data.room_id)
+        .single();
+      
+      // Send cancellation email
+      if (user && room) {
+        console.log("📧 Sending cancellation email to:", user.email);
+        await sendBookingCancellation(user, data, room);
+      }
+    } catch (emailError) {
+      console.error("Error sending cancellation email:", emailError);
+    }
+
     return res.status(200).json({
       success: true,
       message: "Booking cancelled successfully",
@@ -321,105 +347,39 @@ export const cancelBooking = async (req, res) => {
   }
 };
 
-// Get bookings by date range
-export const getBookingsByDateRange = async (req, res) => {
+// Check room availability
+export const checkRoomAvailability = async (req, res) => {
   try {
-    const { start_date, end_date } = req.query;
+    const { room_id } = req.params;
+    const { check_in, check_out } = req.query;
 
-    if (!start_date || !end_date) {
+    if (!check_in || !check_out) {
       return res.status(400).json({
         success: false,
-        message: "Start date and end date are required"
+        error: "Check-in and check-out dates are required"
       });
     }
 
-    const { data, error } = await supabase
+    const { data: conflictingBookings, error } = await supabase
       .from("bookings")
-      .select(`
-        *,
-        rooms (*),
-        Users (user_id, username, email)
-      `)
-      .gte("check_in_date", start_date)
-      .lte("check_out_date", end_date)
-      .order("check_in_date", { ascending: true });
+      .select("booking_id")
+      .eq("room_id", room_id)
+      .in("booking_status", ["confirmed", "checked_in"])
+      .or(`check_in_date.lte.${check_out},check_out_date.gte.${check_in}`);
 
     if (error) throw error;
 
-    res.json({
-      success: true,
-      count: data.length,
-      data: data
-    });
-  } catch (error) {
-    console.error("Get bookings by date range error:", error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message 
-    });
-  }
-};
-
-// Get booking statistics
-export const getBookingStats = async (req, res) => {
-  try {
-    // Get all bookings
-    const { data: bookings, error } = await supabase
-      .from("bookings")
-      .select(`
-        booking_status, 
-        check_in_date, 
-        check_out_date,
-        rooms (base_price)
-      `);
-
-    if (error) throw error;
-
-    // Calculate statistics
-    const totalBookings = bookings.length;
-    const confirmedBookings = bookings.filter(b => b.booking_status === 'confirmed').length;
-    const checkedInBookings = bookings.filter(b => b.booking_status === 'checked_in').length;
-    const checkedOutBookings = bookings.filter(b => b.booking_status === 'checked_out').length;
-    const cancelledBookings = bookings.filter(b => b.booking_status === 'cancelled').length;
-    const noShowBookings = bookings.filter(b => b.booking_status === 'no_show').length;
-
-    // Calculate revenue
-    const totalRevenue = bookings
-      .filter(b => b.booking_status !== 'cancelled' && b.booking_status !== 'no_show')
-      .reduce((sum, b) => {
-        const nights = Math.ceil(
-          (new Date(b.check_out_date) - new Date(b.check_in_date)) / (1000 * 60 * 60 * 24)
-        );
-        return sum + ((b.rooms?.base_price || 0) * nights);
-      }, 0);
-
-    // Calculate occupancy rate (active bookings / total rooms * 100)
-    const { data: rooms } = await supabase
-      .from("rooms")
-      .select("room_id");
-
-    const totalRooms = rooms?.length || 1;
-    const activeBookings = confirmedBookings + checkedInBookings;
-    const occupancyRate = ((activeBookings / totalRooms) * 100).toFixed(2);
+    const available = !conflictingBookings || conflictingBookings.length === 0;
 
     res.json({
       success: true,
-      data: {
-        totalBookings,
-        byStatus: {
-          confirmed: confirmedBookings,
-          checkedIn: checkedInBookings,
-          checkedOut: checkedOutBookings,
-          cancelled: cancelledBookings,
-          noShow: noShowBookings
-        },
-        totalRevenue,
-        occupancyRate: parseFloat(occupancyRate),
-        averageDailyRate: totalRevenue / 30 || 0 // Approximate
-      }
+      available,
+      room_id,
+      check_in,
+      check_out
     });
   } catch (error) {
-    console.error("Get booking stats error:", error);
+    console.error("Check availability error:", error);
     res.status(500).json({ 
       success: false,
       error: error.message 

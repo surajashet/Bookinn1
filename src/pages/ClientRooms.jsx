@@ -1,9 +1,9 @@
-// FILE: src/pages/ClientRooms.jsx
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
+const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001"; // Changed to 3001
 const authFetch = p => fetch(`${BASE_URL}${p}`,{headers:{"Content-Type":"application/json",Authorization:`Bearer ${localStorage.getItem("token")||""}`}}).then(r=>{if(!r.ok)throw new Error(r.statusText);return r.json();});
+
 const Sk = ({w="100%",h=14,r=6,style={}}) => <div style={{width:w,height:h,borderRadius:r,background:"linear-gradient(90deg,#EBF0EE 25%,#D6E3DF 50%,#EBF0EE 75%)",backgroundSize:"200% 100%",animation:"bkShimmer 1.5s infinite",...style}} />;
 
 export default function ClientRooms() {
@@ -66,7 +66,7 @@ export default function ClientRooms() {
         </div>
       ) : visible.length === 0 ? (
         <div style={{ background:"#fff", borderRadius:12, border:"1px solid #D6E3DF", padding:"72px 32px", textAlign:"center" }}>
-          <i className="fa-regular fa-bed" style={{ fontSize:40, color:"#d4cbc0", marginBottom:16, display:"block" }} />
+          <div style={{ fontSize:40, color:"#d4cbc0", marginBottom:16, display:"block" }}>🏨</div>
           <div style={{ fontFamily:"'Soria',serif", fontSize:22, color:"#6B6560", marginBottom:8 }}>
             {filter==="All" ? "No rooms available" : `No ${filter} rooms available`}
           </div>
@@ -80,7 +80,7 @@ export default function ClientRooms() {
         </div>
       )}
 
-      {error && <div style={{ position:"fixed", bottom:30, right:30, background:"#fff", border:"1px solid #D6E3DF", borderLeft:"3px solid #B45C5C", padding:"12px 18px", borderRadius:12, fontSize:13, color:"#1E1C1A", boxShadow:"0 4px 16px rgba(0,0,0,.1)", zIndex:300 }}><i className="fa-regular fa-circle-exclamation" style={{ marginRight:8, color:"#B45C5C" }} />{error}</div>}
+      {error && <div style={{ position:"fixed", bottom:30, right:30, background:"#fff", border:"1px solid #D6E3DF", borderLeft:"3px solid #B45C5C", padding:"12px 18px", borderRadius:12, fontSize:13, color:"#1E1C1A", boxShadow:"0 4px 16px rgba(0,0,0,.1)", zIndex:300 }}>{error}</div>}
       </div>
     </>
   );
@@ -90,13 +90,25 @@ function RoomCard({ room, idx }) {
   const [hovered, setHovered] = useState(false);
   const navigate = useNavigate();
 
+  const handleBookNow = () => {
+    // Navigate to booking page with room ID
+    navigate(`/client/book?room=${room.id}`);
+  };
+
+  const handleViewDetails = () => {
+    // Navigate to room details page (you can create this page later)
+    // For now, just show alert or navigate to rooms page
+    alert(`Room ${room.id} details coming soon!`);
+    // Or: navigate(`/client/rooms/${room.id}`);
+  };
+
   return (
     <div onMouseEnter={()=>setHovered(true)} onMouseLeave={()=>setHovered(false)}
       style={{ background:"#fff", borderRadius:12, overflow:"hidden", border:"1px solid #D6E3DF", boxShadow:hovered?"0 14px 36px rgba(0,0,0,.1)":"0 2px 8px rgba(0,0,0,.04)", transform:hovered?"translateY(-4px)":"translateY(0)", transition:"transform .24s,box-shadow .24s", animationDelay:`${idx*.05}s` }}>
       <div style={{ position:"relative", height:210, overflow:"hidden", background:"#EBF0EE" }}>
         {room.image_url
           ? <img src={room.image_url} alt={room.name} style={{ width:"100%", height:"100%", objectFit:"cover", transform:hovered?"scale(1.06)":"scale(1)", transition:"transform .4s" }} />
-          : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", color:"#c0b8ae", fontSize:40 }}><i className="fa-regular fa-image" /></div>
+          : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", color:"#c0b8ae", fontSize:40 }}>🏨</div>
         }
         <div style={{ position:"absolute", top:12, right:12, background:"rgba(31,42,58,.84)", backdropFilter:"blur(6px)", color:"#4A7C72", padding:"5px 11px", borderRadius:12, fontSize:13, fontWeight:600 }}>
           ₹{room.price?.toLocaleString("en-IN")}<span style={{ color:"rgba(255,255,255,.55)", fontWeight:400, fontSize:11 }}>/night</span>
@@ -117,11 +129,11 @@ function RoomCard({ room, idx }) {
           </div>
         )}
         <div style={{ display:"flex", gap:10 }}>
-          <button onClick={()=>alert(`Booking room ${room.id} — implement booking flow`)}
+          <button onClick={handleBookNow}
             style={{ flex:1, padding:"11px 0", background:"#1E1C1A", color:"#fff", border:"none", borderRadius:12, fontFamily:"inherit", fontSize:13, fontWeight:600, cursor:"pointer", transition:"opacity .2s" }}>
             Book Now
           </button>
-          <button onClick={()=>navigate(`/client/rooms/${room.id}`)}
+          <button onClick={handleViewDetails}
             style={{ padding:"11px 16px", background:"transparent", color:"#6B6560", border:"1px solid #D6E3DF", borderRadius:12, fontFamily:"inherit", fontSize:13, cursor:"pointer" }}>
             Details
           </button>

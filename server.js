@@ -1,6 +1,12 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
+// Debug: Print email config to verify
+console.log("📧 Server startup - EMAIL_USER:", process.env.EMAIL_USER);
+console.log("📧 Server startup - EMAIL_PASS set:", !!process.env.EMAIL_PASS);
+
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 
 // Import all routes
 import userRoutes from "./routes/user.routes.js";
@@ -11,8 +17,7 @@ import invoiceRoutes from "./routes/invoice.routes.js";
 import paymentRoutes from "./routes/payment.routes.js";
 import clientRoutes from "./routes/client.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
-
-dotenv.config();
+import verificationRoutes from "./routes/verification.routes.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -33,6 +38,7 @@ app.use("/api/invoices", invoiceRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/client", clientRoutes);
 app.use("/api/upload", uploadRoutes);
+app.use("/api/verify", verificationRoutes);
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {

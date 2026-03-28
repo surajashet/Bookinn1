@@ -1,8 +1,9 @@
 import supabase from "../config/supabaseClient.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { sendVerificationEmail, generateOTP } from "../utils/emailService.js";
 
-// Create a new user
+// Create a new user (with email verification)
 export const createUser = async (req, res) => {
   try {
     const { username, email, password } = req.body;
@@ -48,8 +49,19 @@ export const createUser = async (req, res) => {
 
     // Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
-    const role = "customer"; // default role
+    const role = "customer";
 
+    // Generate OTP for email verification - using local time then convert to ISO
+    const otp = generateOTP();
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + 30); // 30 minutes from now
+    
+    console.log("🔑 Creating user with OTP:", otp);
+    console.log("⏰ Current local time:", new Date().toString());
+    console.log("⏰ OTP expires at local:", expiresAt.toString());
+    console.log("⏰ OTP expires at UTC:", expiresAt.toISOString());
+
+    // Create user with verification fields
     const { data, error } = await supabase
       .from("Users")
       .insert([
@@ -59,6 +71,9 @@ export const createUser = async (req, res) => {
           password: hashedPassword,
           role,
           availability: "available",
+          email_verified: false,
+          verification_token: otp,
+          token_expires: expiresAt.toISOString(), // Store as ISO string
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         }
@@ -73,18 +88,18 @@ export const createUser = async (req, res) => {
       });
     }
 
-    // Generate token for auto-login after signup
-    const token = jwt.sign(
-      { id: data[0].user_id, email: data[0].email, role: data[0].role },
-      process.env.JWT_SECRET || "your-secret-key",
-      { expiresIn: "24h" }
-    );
+    // Send verification email (don't await - send in background)
+    sendVerificationEmail(email, username, otp)
+      .catch(err => console.error("Failed to send verification email:", err));
 
     return res.status(201).json({
       success: true,
-      message: "User created successfully",
-      token,
-      user: data[0]
+      message: "User created successfully. Please check your email for verification code.",
+      user: {
+        user_id: data[0].user_id,
+        username: data[0].username,
+        email: data[0].email
+      }
     });
 
   } catch (err) {
@@ -96,7 +111,7 @@ export const createUser = async (req, res) => {
   }
 };
 
-// Login user
+// Login user (with email verification check)
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -128,6 +143,16 @@ export const loginUser = async (req, res) => {
       return res.status(401).json({ 
         success: false,
         message: "Invalid email or password" 
+      });
+    }
+
+    // Check if email is verified
+    if (!user.email_verified) {
+      return res.status(403).json({ 
+        success: false,
+        message: "Please verify your email before logging in. Check your inbox for the verification code.",
+        requiresVerification: true,
+        email: user.email
       });
     }
 
@@ -180,7 +205,7 @@ export const getUsers = async (req, res) => {
 
     let query = supabase
       .from("Users")
-      .select("user_id, username, email, role, availability, created_at, updated_at");
+      .select("user_id, username, email, role, availability, email_verified, created_at, updated_at");
 
     if (role) {
       query = query.eq("role", role);
@@ -221,7 +246,7 @@ export const getUserById = async (req, res) => {
 
     const { data, error } = await supabase
       .from("Users")
-      .select("user_id, username, email, role, availability, created_at, updated_at")
+      .select("user_id, username, email, role, availability, email_verified, created_at, updated_at")
       .eq("user_id", id)
       .maybeSingle();
 
@@ -670,7 +695,7 @@ export const getUserStats = async (req, res) => {
   try {
     const { data: users, error } = await supabase
       .from("Users")
-      .select("role, availability");
+      .select("role, availability, email_verified");
 
     if (error) {
       return res.status(500).json({
@@ -692,6 +717,10 @@ export const getUserStats = async (req, res) => {
         offline: users.filter(u => u.availability === 'offline').length,
         on_leave: users.filter(u => u.availability === 'on_leave').length,
         deleted: users.filter(u => u.availability === 'deleted').length
+      },
+      email_verified: {
+        verified: users.filter(u => u.email_verified === true).length,
+        unverified: users.filter(u => u.email_verified === false).length
       }
     };
 
