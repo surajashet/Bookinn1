@@ -29,6 +29,6 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts"
-  ],
+, "components/BookinnChatbot.jsx", "lib/intent.js"  ],
   "exclude": ["node_modules"]
 }

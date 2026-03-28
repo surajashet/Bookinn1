@@ -15,7 +15,7 @@ export default function Signup() {
     setError("");
 
     try {
-      const response = await fetch('http://localhost:3001/api/users', {
+      const response = await fetch('http://localhost:5000/api/users/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -29,7 +29,7 @@ export default function Signup() {
 
       if (response.ok) {
         // Auto login after signup
-        const loginResponse = await fetch('http://localhost:3001/api/users/login', {
+        const loginResponse = await fetch('http://localhost:5000/api/users/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: formData.email, password: formData.password })

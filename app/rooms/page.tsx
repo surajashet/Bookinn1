@@ -20,7 +20,7 @@ export default function RoomsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('http://localhost:3001/api/rooms')
+    fetch('http://localhost:5000/api/rooms')
       .then(res => res.json())
       .then(data => {
         if (data.success) {

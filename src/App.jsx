@@ -4,20 +4,23 @@ import Signup from './pages/Signup';
 import ClientDashboard from './pages/ClientDashboard';
 import ClientRooms from './pages/ClientRooms';
 import AdminDashboard from './pages/admin/AdminDashboard';
+import ClientBookings from "./pages/ClientBookings";
+import ClientBookRoom from "./pages/ClientBookRoom";
+import BookinnChatbot from "../components/BookinnChatbot";
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const token = localStorage.getItem('token');
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   
-  if (!token) {
-    return <Navigate to="/login" />;
-  }
+  if (!token) return <Navigate to="/login" />;
+  if (allowedRoles && !allowedRoles.includes(user.role)) return <Navigate to="/login" />;
   
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
-    return <Navigate to="/login" />;
-  }
-  
-  return children;
+  return (
+    <>
+      {children}
+      <BookinnChatbot />
+    </>
+  );
 };
 
 function App() {

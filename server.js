@@ -11,6 +11,7 @@ import invoiceRoutes from "./routes/invoice.routes.js";
 import paymentRoutes from "./routes/payment.routes.js";
 import clientRoutes from "./routes/client.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
+import { detectIntent, getReply } from "./lib/intent.js";
 
 dotenv.config();
 
@@ -41,6 +42,20 @@ app.get("/api/health", (req, res) => {
     message: "BookInn API is running",
     timestamp: new Date().toISOString()
   });
+});
+app.post("/api/chat", async (req, res) => {
+  try {
+    const { message } = req.body;
+    if (!message) return res.status(400).json({ error: "Message is required" });
+
+    const intent = await detectIntent(message);
+    const reply = getReply(intent);
+
+    return res.json({ reply, intent });
+  } catch (error) {
+    console.error("Chat error:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 // 404 handler

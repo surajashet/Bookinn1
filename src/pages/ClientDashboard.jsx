@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
+const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const get = p => fetch(`${BASE_URL}${p}`, { headers: { "Content-Type":"application/json", Authorization:`Bearer ${localStorage.getItem("token")||""}` } }).then(r => { if(!r.ok) throw new Error(r.statusText); return r.json(); });
 
 const fmtDate = d => new Date(d).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
@@ -46,9 +46,72 @@ export default function ClientDashboard() {
   const [rLoading,setRLoading] = useState(true);
 
   useEffect(() => {
-    get("/api/client/dashboard").then(d=>{setData(d);setLoading(false);}).catch(()=>setLoading(false));
-    get("/api/client/rooms").then(d=>{setRooms(Array.isArray(d)?d:[]);setRLoading(false);}).catch(()=>setRLoading(false));
-  }, []);
+  // 🔥 Dummy dashboard data
+  const dummyData = {
+    profile: { name: localStorage.getItem("userName") || "Guest" },
+    stats: {
+      totalBookings: 3,
+      activeBookings: 1,
+      totalSpend: 12000,
+      loyaltyPoints: 150
+    },
+    upcoming: {
+      room_number: "101",
+      room_type: "Deluxe",
+      check_in: "2026-03-25",
+      check_out: "2026-03-27"
+    },
+    recent: [
+      {
+        id: 1,
+        room_number: "101",
+        room_type: "Deluxe",
+        check_in: "2026-03-25",
+        check_out: "2026-03-27",
+        status: "Confirmed",
+        total_amount: 4000
+      },
+      {
+        id: 2,
+        room_number: "202",
+        room_type: "Suite",
+        check_in: "2026-03-20",
+        check_out: "2026-03-22",
+        status: "Checked In",
+        total_amount: 6000
+      }
+    ]
+  };
+
+  // 🔥 Dummy rooms
+  const dummyRooms = [
+    {
+      id: 1,
+      name: "Deluxe Room",
+      type: "Deluxe",
+      image_url: "/bg2.jpg"
+    },
+    {
+      id: 2,
+      name: "Suite Room",
+      type: "Suite",
+      image_url: "/bg2.jpg"
+    },
+    {
+      id: 3,
+      name: "Standard Room",
+      type: "Standard",
+      image_url: "/bg2.jpg"
+    }
+  ];
+
+  setTimeout(() => {
+    setData(dummyData);
+    setRooms(dummyRooms);
+    setLoading(false);
+    setRLoading(false);
+  }, 800);
+}, []);
 
   const firstName = data?.profile?.name?.split(" ")[0] || "Guest";
 
