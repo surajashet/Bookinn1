@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import toast, { Toaster } from "react-hot-toast";
 
 const ACCENT = "#4A7C72";
 
@@ -8,6 +9,20 @@ export default function Signup() {
   const [formData, setFormData] = useState({ name: "", email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Check if already logged in
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    
+    if (token && user.role) {
+      if (user.role === 'admin') {
+        navigate('/admin/dashboard');
+      } else if (user.role === 'customer') {
+        navigate('/client/dashboard');
+      }
+    }
+  }, [navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -28,6 +43,7 @@ export default function Signup() {
       const data = await response.json();
 
       if (response.ok) {
+<<<<<<< HEAD
         // Auto login after signup
         const loginResponse = await fetch('http://localhost:5000/api/users/login', {
           method: 'POST',
@@ -42,11 +58,20 @@ export default function Signup() {
           localStorage.setItem("user", JSON.stringify(loginData.user));
           navigate("/client/dashboard");
         }
+=======
+        localStorage.setItem("tempPassword", formData.password);
+        toast.success("Account created! Verification code sent to your email.");
+        setTimeout(() => {
+          navigate(`/verify?email=${formData.email}`);
+        }, 1500);
+>>>>>>> 6ca6f8f40a27d59ae1dd8034235927a168bb88ec
       } else {
         setError(data.message || "Signup failed");
+        toast.error(data.message || "Signup failed");
       }
     } catch (err) {
       setError("Connection error. Please try again.");
+      toast.error("Connection error. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -54,7 +79,8 @@ export default function Signup() {
 
   return (
     <div style={{ display: "flex", height: "100vh", background: "#FDFCFB" }}>
-      {/* Right Side Image */}
+      <Toaster position="top-center" />
+      
       <div style={{ width: 500, display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 80px" }}>
         <div style={{ marginBottom: 40 }}>
           <h2 style={{ fontFamily: "'Soria', serif", fontSize: 32, color: "#1E1C1A", marginBottom: 12 }}>Create Account</h2>

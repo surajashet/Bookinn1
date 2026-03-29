@@ -1,0 +1,11 @@
+[33m5fbb290[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m Integrated teammate frontend updates safely
+[33m1b425dd[m reduced all files fromm the main project and still overall is working till nowA
+[33m7eca272[m chatboat all  intergrated with main project
+[33m67683de[m[33m ([m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m)[m Initial commit: BookInn Hotel Management System
+[33me03b5ce[m Resolved merge conflicts and fixed package files
+[33m4ca4e04[m Initial commit - rooms and booking API
+[33mb2eee3f[m Resolved merge conflict
+[33m2866a4a[m Initial commit - Swathy React code
+[33m156fa25[m Added CRM backend APIs (users + tasks)
+[33m895c5a0[m chatboat component
+[33mee60f59[m Initial commit from Create Next App

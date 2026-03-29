@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import toast, { Toaster } from "react-hot-toast";
 
 const ACCENT = "#4A7C72";
 
@@ -8,6 +9,20 @@ export default function Login() {
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Check if already logged in
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    
+    if (token && user.role) {
+      if (user.role === 'admin') {
+        navigate('/admin/dashboard');
+      } else if (user.role === 'customer') {
+        navigate('/client/dashboard');
+      }
+    }
+  }, [navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -27,19 +42,34 @@ export default function Login() {
         localStorage.setItem("token", data.token);
         localStorage.setItem("user", JSON.stringify(data.user));
         
-        // Redirect based on user role
-        if (data.user.role === 'admin') {
-          navigate("/admin/dashboard");
-        } else if (data.user.role === 'staff') {
-          navigate("/staff/dashboard");
-        } else {
-          navigate("/client/dashboard");
-        }
+        toast.success("Login successful!");
+        
+        // Redirect based on role
+        setTimeout(() => {
+          if (data.user.role === 'admin') {
+            navigate("/admin/dashboard");
+          } else if (data.user.role === 'staff') {
+            navigate("/staff/dashboard");
+          } else {
+            navigate("/client/dashboard");
+          }
+        }, 500);
       } else {
-        setError(data.message || "Login failed");
+        // Check if verification is required
+        if (data.requiresVerification) {
+          setError(data.message);
+          toast.error(data.message);
+          setTimeout(() => {
+            navigate(`/verify?email=${formData.email}`);
+          }, 1500);
+        } else {
+          setError(data.message || "Login failed");
+          toast.error(data.message || "Login failed");
+        }
       }
     } catch (err) {
       setError("Connection error. Please try again.");
+      toast.error("Connection error. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -47,6 +77,8 @@ export default function Login() {
 
   return (
     <div style={{ display: "flex", height: "100vh", background: "#FDFCFB" }}>
+      <Toaster position="top-center" />
+      
       {/* Visual Brand Side */}
       <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
         <img src="/bg2.jpg" alt="Luxury Interior" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
