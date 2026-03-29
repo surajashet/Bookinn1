@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 
-const BASE_URL = "http://localhost:3001";
+const BASE_URL = "http://localhost:5000";
 
 export default function ClientBooking() {
   const navigate = useNavigate();

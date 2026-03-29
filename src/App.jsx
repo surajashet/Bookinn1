@@ -5,7 +5,6 @@ import VerifyEmail from './pages/VerifyEmail';
 import ClientDashboard from './pages/ClientDashboard';
 import ClientRooms from './pages/ClientRooms';
 import ClientBooking from './pages/ClientBooking';
-import ClientBookings from './pages/ClientBookings';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import ClientBookings from "./pages/ClientBookings";
 import ClientBookRoom from "./pages/ClientBookRoom";

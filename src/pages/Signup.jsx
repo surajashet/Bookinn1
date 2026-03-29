@@ -30,7 +30,7 @@ export default function Signup() {
     setError("");
 
     try {
-      const response = await fetch('http://localhost:5000/api/users/login', {
+      const response = await fetch('http://localhost:5000/api/users/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -43,28 +43,11 @@ export default function Signup() {
       const data = await response.json();
 
       if (response.ok) {
-<<<<<<< HEAD
-        // Auto login after signup
-        const loginResponse = await fetch('http://localhost:5000/api/users/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: formData.email, password: formData.password })
-        });
-        
-        const loginData = await loginResponse.json();
-        
-        if (loginResponse.ok) {
-          localStorage.setItem("token", loginData.token);
-          localStorage.setItem("user", JSON.stringify(loginData.user));
-          navigate("/client/dashboard");
-        }
-=======
         localStorage.setItem("tempPassword", formData.password);
         toast.success("Account created! Verification code sent to your email.");
         setTimeout(() => {
           navigate(`/verify?email=${formData.email}`);
         }, 1500);
->>>>>>> 6ca6f8f40a27d59ae1dd8034235927a168bb88ec
       } else {
         setError(data.message || "Signup failed");
         toast.error(data.message || "Signup failed");

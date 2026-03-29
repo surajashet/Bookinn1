@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import toast, { Toaster } from "react-hot-toast";
 
-const BASE_URL = "http://localhost:3001";
+const BASE_URL = "http://localhost:5000";
 
 export default function VerifyEmail() {
   const navigate = useNavigate();

@@ -17,13 +17,10 @@ import invoiceRoutes from "./routes/invoice.routes.js";
 import paymentRoutes from "./routes/payment.routes.js";
 import clientRoutes from "./routes/client.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
-<<<<<<< HEAD
 import { detectIntent, getReply } from "./lib/intent.js";
 
 dotenv.config();
-=======
 import verificationRoutes from "./routes/verification.routes.js";
->>>>>>> 6ca6f8f40a27d59ae1dd8034235927a168bb88ec
 
 const app = express();
 const PORT = process.env.PORT || 3001;
