@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import toast, { Toaster } from "react-hot-toast";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const get = p => fetch(`${BASE_URL}${p}`, { headers: { "Content-Type":"application/json", Authorization:`Bearer ${localStorage.getItem("token")||""}` } }).then(r => { if(!r.ok) throw new Error(r.statusText); return r.json(); });
@@ -44,23 +45,59 @@ export default function ClientDashboard() {
   const [rooms,setRooms]       = useState([]);
   const [loading,setLoading]   = useState(true);
   const [rLoading,setRLoading] = useState(true);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
+    const userData = JSON.parse(localStorage.getItem("user") || "{}");
+    setUser(userData);
+    
     get("/api/client/dashboard").then(d=>{setData(d);setLoading(false);}).catch(()=>setLoading(false));
     get("/api/client/rooms").then(d=>{setRooms(Array.isArray(d)?d:[]);setRLoading(false);}).catch(()=>setRLoading(false));
   }, []);
 
-  const firstName = data?.profile?.name?.split(" ")[0] || "Guest";
+  const firstName = data?.profile?.name?.split(" ")[0] || user?.username?.split(" ")[0] || "Guest";
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    localStorage.removeItem("tempPassword");
+    toast.success("Logged out successfully!");
+    setTimeout(() => {
+      window.location.href = "/";
+    }, 500);
+  };
 
   return (
     <>
+      <Toaster position="top-center" />
+      
       {/* HERO */}
       <div style={{ position:"relative", margin:"0 -32px 0 -32px", height:"92vh", minHeight:560, overflow:"hidden" }}>
         <img src="/bg2.jpg" alt="" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", objectPosition:"center 55%" }} />
         <div style={{ position:"absolute", inset:0, background:"linear-gradient(to right, rgba(20,18,16,0.68) 0%, rgba(20,18,16,0.25) 60%, transparent 100%)" }} />
         <div style={{ position:"relative", zIndex:2, height:"100%", display:"flex", flexDirection:"column", justifyContent:"center" }}>
           <div style={{ maxWidth:1280, margin:"0 auto", width:"100%", padding:"0 64px 80px", display:"flex", flexDirection:"column", justifyContent:"center", flex:1 }}>
-            <div style={{ fontSize:10, color:"rgba(255,255,255,0.5)", textTransform:"uppercase", letterSpacing:".28em", marginBottom:24, fontFamily:"'CabinetGrotesk',sans-serif", fontWeight:200 }}>Welcome to BOOKINN</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+              <div style={{ fontSize:10, color:"rgba(255,255,255,0.5)", textTransform:"uppercase", letterSpacing:".28em", fontFamily:"'CabinetGrotesk',sans-serif", fontWeight:200 }}>Welcome to BOOKINN</div>
+              <button 
+                onClick={handleLogout}
+                style={{
+                  background: "rgba(180,92,92,0.9)",
+                  color: "white",
+                  border: "none",
+                  padding: "6px 16px",
+                  borderRadius: "20px",
+                  cursor: "pointer",
+                  fontSize: "12px",
+                  fontFamily: "'CabinetGrotesk', sans-serif",
+                  backdropFilter: "blur(4px)"
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = "#B45C5C"}
+                onMouseLeave={e => e.currentTarget.style.background = "rgba(180,92,92,0.9)"}
+              >
+                Logout
+              </button>
+            </div>
             {loading ? (
               <><Sk w={340} h={56} style={{ marginBottom:20, background:"rgba(255,255,255,.1)" }} /><Sk w={260} h={14} style={{ background:"rgba(255,255,255,.07)" }} /></>
             ) : (
@@ -185,7 +222,7 @@ export default function ClientDashboard() {
                   {["Room","Type","Check-in","Check-out","Nights","Amount","Status"].map(h => (
                     <th key={h} style={{ padding:"0 24px 16px 0", textAlign:"left", fontFamily:"'CabinetGrotesk',sans-serif", fontWeight:200, fontSize:10, color:"#A09890", letterSpacing:".18em", textTransform:"uppercase" }}>{h}</th>
                   ))}
-                </tr>
+                 </tr>
               </thead>
               <tbody>
                 {data.recent.map((b,i) => (

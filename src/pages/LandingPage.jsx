@@ -714,29 +714,20 @@ function Footer() {
 ───────────────────────────────────────────────────── */
 export default function LandingPage() {
   const navigate = useNavigate();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userRole, setUserRole] = useState(null);
 
+  // Check if already logged in and redirect immediately
   useEffect(() => {
     const token = localStorage.getItem('token');
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     
+    console.log("🔍 LandingPage - Checking auth:", { token: !!token, role: user.role });
+    
     if (token && user.role) {
-      setIsAuthenticated(true);
-      setUserRole(user.role);
+      const dashboardPath = user.role === 'admin' ? '/admin/dashboard' : '/client/dashboard';
+      console.log("🔀 Redirecting to:", dashboardPath);
+      navigate(dashboardPath, { replace: true });
     }
-  }, []);
-
-  // Redirect if already logged in
-  useEffect(() => {
-    if (isAuthenticated) {
-      if (userRole === 'admin') {
-        navigate('/admin/dashboard');
-      } else if (userRole === 'customer') {
-        navigate('/client/dashboard');
-      }
-    }
-  }, [isAuthenticated, userRole, navigate]);
+  }, [navigate]);
 
   // Fade animations
   useEffect(() => {

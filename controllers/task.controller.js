@@ -1,6 +1,6 @@
 import supabase from "../config/supabaseClient.js";
 
-// Create task with workload balancing
+// Create task with workload balancing (admin/staff only)
 export const createTask = async (req, res) => {
   try {
     const { room_id, raised_by_user_id, task_type, description, priority } = req.body;
@@ -90,8 +90,190 @@ export const createTask = async (req, res) => {
   }
 };
 
-// Get all tasks (with filters)
-export const getAllTasks = async (req, res) => {
+// Create a service request (for customers to request room service)
+export const createServiceRequest = async (req, res) => {
+  try {
+    const { room_id, task_type, description, priority } = req.body;
+    const raised_by_user_id = req.user.id;
+
+    // Check if the user has an active booking for this room
+    const today = new Date().toISOString().split('T')[0];
+    const { data: booking, error: bookingError } = await supabase
+      .from("bookings")
+      .select("booking_id, booking_status")
+      .eq("user_id", raised_by_user_id)
+      .eq("room_id", room_id)
+      .in("booking_status", ["confirmed", "checked_in"])
+      .gte("check_out_date", today)
+      .maybeSingle();
+
+    if (bookingError || !booking) {
+      return res.status(403).json({
+        success: false,
+        error: "You can only request services for rooms you have an active booking for"
+      });
+    }
+
+    // Get all available staff
+    const { data: staff, error: staffError } = await supabase
+      .from("Users")
+      .select("user_id")
+      .eq("role", "staff")
+      .eq("availability", "available");
+
+    if (staffError || !staff || staff.length === 0) {
+      return res.status(400).json({ 
+        success: false,
+        error: "No staff available at the moment" 
+      });
+    }
+
+    // Get current task counts for workload balancing
+    const { data: tasks } = await supabase
+      .from("Tasks")
+      .select("assigned_staff_id")
+      .in("status", ["pending", "in_progress"]);
+
+    let staffWorkload = {};
+    staff.forEach(s => { staffWorkload[s.user_id] = 0; });
+    tasks?.forEach(t => {
+      if (staffWorkload[t.assigned_staff_id] !== undefined) {
+        staffWorkload[t.assigned_staff_id]++;
+      }
+    });
+
+    // Find least busy staff
+    let assigned_staff_id = Object.keys(staffWorkload).reduce((a, b) =>
+      staffWorkload[a] < staffWorkload[b] ? a : b
+    );
+
+    // Create task
+    const { data, error } = await supabase
+      .from("Tasks")
+      .insert([{
+        room_id,
+        raised_by_user_id,
+        assigned_staff_id,
+        task_type,
+        description,
+        priority: priority || 'normal',
+        status: 'pending'
+      }])
+      .select(`
+        *,
+        rooms (*),
+        Users!Tasks_raised_by_user_id_fkey (user_id, username, email),
+        Users!Tasks_assigned_staff_id_fkey (user_id, username)
+      `);
+
+    if (error) throw error;
+
+    // Log activity
+    await supabase
+      .from("Activity Logs")
+      .insert([{
+        user_id: raised_by_user_id,
+        action: "CREATE_SERVICE_REQUEST",
+        entity_type: "task",
+        description: `Service request created for room ${room_id} - ${task_type}`
+      }]);
+
+    res.status(201).json({
+      success: true,
+      message: "Service request created successfully",
+      data: data[0]
+    });
+  } catch (error) {
+    console.error("Create service request error:", error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+};
+
+// Get user's service requests (for customers)
+export const getUserServiceRequests = async (req, res) => {
+  try {
+    const user_id = req.user.id;
+
+    const { data, error } = await supabase
+      .from("Tasks")
+      .select(`
+        *,
+        rooms (room_number, room_type),
+        Users!Tasks_assigned_staff_id_fkey (username)
+      `)
+      .eq("raised_by_user_id", user_id)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      data: data
+    });
+  } catch (error) {
+    console.error("Get user service requests error:", error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+};
+
+// Get staff's assigned tasks (for staff dashboard)
+export const getStaffAssignedTasks = async (req, res) => {
+  try {
+    const staff_id = req.user.id;
+
+    // Get active tasks assigned to this staff
+    const { data: activeTasks, error: tasksError } = await supabase
+      .from("Tasks")
+      .select(`
+        *,
+        rooms (room_number, room_type),
+        Users!Tasks_raised_by_user_id_fkey (user_id, username, email)
+      `)
+      .eq("assigned_staff_id", staff_id)
+      .in("status", ["pending", "in_progress"])
+      .order("created_at", { ascending: false });
+
+    if (tasksError) throw tasksError;
+
+    // Get today's check-ins
+    const today = new Date().toISOString().split('T')[0];
+    const { data: checkIns, error: checkInError } = await supabase
+      .from("bookings")
+      .select(`
+        *,
+        rooms (room_number, room_type),
+        Users (username, email)
+      `)
+      .eq("check_in_date", today)
+      .eq("booking_status", "confirmed")
+      .limit(10);
+
+    if (checkInError) throw checkInError;
+
+    res.json({
+      success: true,
+      data: {
+        active_tasks: activeTasks || [],
+        today_check_ins: checkIns || []
+      }
+    });
+  } catch (error) {
+    console.error("Get staff assigned tasks error:", error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+};
+
+// Get all tasks with filters (admin)
+export const getAllTasksWithFilters = async (req, res) => {
   try {
     const { status, priority, task_type, staff_id, room_id } = req.query;
 
@@ -140,7 +322,10 @@ export const getAllTasks = async (req, res) => {
   }
 };
 
-// Get tasks by staff ID (your existing function enhanced)
+// Get all tasks (with filters) - alias for backward compatibility
+export const getAllTasks = getAllTasksWithFilters;
+
+// Get tasks by staff ID
 export const getTasksByStaff = async (req, res) => {
   try {
     const { staff_id } = req.params;
