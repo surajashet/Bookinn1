@@ -12,7 +12,7 @@ import ClientBookings from "./pages/ClientBookings";
 import ClientBookRoom from "./pages/ClientBookRoom";
 import BookinnChatbot from "../components/BookinnChatbot";
 import StaffDashboard from './pages/StaffDashboard';
-
+import BookingInvoice from "./pages/BookingInvoice";
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const token = localStorage.getItem('token');
   const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -96,6 +96,14 @@ function App() {
             </ProtectedRoute>
           } 
         />
+        <Route 
+  path="/client/bookings/:id/invoice" 
+  element={
+    <ProtectedRoute allowedRoles={['customer']}>
+      <BookingInvoice />
+    </ProtectedRoute>
+  } 
+/>
         
         {/* Admin Routes */}
         <Route 

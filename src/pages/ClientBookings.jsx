@@ -33,7 +33,7 @@ export default function ClientBookings() {
 
   const cancelBooking = async (bookingId) => {
     if (!confirm("Are you sure you want to cancel this booking?")) return;
-    
+
     setCancelling(bookingId);
     try {
       const token = localStorage.getItem("token");
@@ -56,19 +56,18 @@ export default function ClientBookings() {
     }
   };
 
-  const formatDate = (date) => {
-    return new Date(date).toLocaleDateString("en-IN", {
+  const formatDate = (date) =>
+    new Date(date).toLocaleDateString("en-IN", {
       day: "numeric",
       month: "short",
       year: "numeric"
     });
-  };
 
   const getStatusBadge = (status) => {
     const styles = {
-      confirmed: { bg: "#e8f2ef", color: "#2d6b5e" },
-      cancelled: { bg: "#faeaea", color: "#8a3030" },
-      checked_in: { bg: "#e5f0ee", color: "#2d6b5e" },
+      confirmed:   { bg: "#e8f2ef", color: "#2d6b5e" },
+      cancelled:   { bg: "#faeaea", color: "#8a3030" },
+      checked_in:  { bg: "#e5f0ee", color: "#2d6b5e" },
       checked_out: { bg: "#f0eff6", color: "#4a4070" }
     };
     const s = styles[status] || { bg: "#F0EBE4", color: "#6B6560" };
@@ -76,37 +75,106 @@ export default function ClientBookings() {
       <span style={{
         background: s.bg,
         color: s.color,
-        padding: "4px 12px",
-        borderRadius: "20px",
-        fontSize: "12px"
+        padding: "3px 12px",
+        borderRadius: "999px",
+        fontSize: "10px",
+        fontWeight: 400,
+        letterSpacing: ".08em",
+        textTransform: "uppercase",
+        whiteSpace: "nowrap"
       }}>
-        {status.replace("_", " ").toUpperCase()}
+        {status.replace("_", " ")}
       </span>
     );
   };
 
   if (loading) {
-    return <div style={{ padding: "40px", textAlign: "center" }}>Loading your bookings...</div>;
+    return (
+      <div style={{
+        minHeight: "60vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: "'CabinetGrotesk', sans-serif",
+        color: "#A09890",
+        fontSize: 13,
+        letterSpacing: ".08em"
+      }}>
+        Loading your bookings...
+      </div>
+    );
   }
 
   return (
-    <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "40px" }}>
-      <h1 style={{ fontSize: "32px", marginBottom: "8px" }}>My Bookings</h1>
-      <p style={{ color: "#6B6560", marginBottom: "32px" }}>View and manage your reservations</p>
+    <div style={{
+      maxWidth: 1100,
+      margin: "0 auto",
+      padding: "64px 40px",
+      fontFamily: "'CabinetGrotesk', sans-serif"
+    }}>
 
+      {/* ── page heading ── */}
+      <div style={{ marginBottom: 48 }}>
+        <div style={{
+          fontSize: 10,
+          color: "#4A7C72",
+          textTransform: "uppercase",
+          letterSpacing: ".22em",
+          fontWeight: 200,
+          marginBottom: 10
+        }}>
+          Reservations
+        </div>
+        <h1 style={{
+          fontFamily: "'Soria', serif",
+          fontStyle: "italic",
+          fontSize: "clamp(28px, 3vw, 40px)",
+          fontWeight: 400,
+          color: "#1E1C1A",
+          lineHeight: 1,
+          marginBottom: 10
+        }}>
+          My Bookings
+        </h1>
+        <p style={{ color: "#A09890", fontSize: 13, fontWeight: 200 }}>
+          View and manage your reservations
+        </p>
+      </div>
+
+      {/* ── empty state ── */}
       {bookings.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "60px", background: "white", borderRadius: "16px", border: "1px solid #E4DDD4" }}>
-          <div style={{ fontSize: "48px", marginBottom: "16px" }}>📅</div>
-          <h3>No bookings yet</h3>
-          <p style={{ color: "#6B6560", marginBottom: "24px" }}>Start your first booking by browsing our rooms.</p>
+        <div style={{
+          textAlign: "center",
+          padding: "80px 40px",
+          background: "#FDFCFB",
+          borderRadius: 20,
+          border: "1px solid #E4DDD4"
+        }}>
+          <div style={{
+            fontFamily: "'Soria', serif",
+            fontStyle: "italic",
+            fontSize: 20,
+            color: "#A09890",
+            marginBottom: 10
+          }}>
+            No bookings yet
+          </div>
+          <p style={{ color: "#A09890", fontSize: 13, fontWeight: 200, marginBottom: 28 }}>
+            Start your first booking by browsing our rooms.
+          </p>
           <button
             onClick={() => navigate("/client/rooms")}
             style={{
               background: "#4A7C72",
-              color: "white",
-              padding: "12px 24px",
+              color: "#fff",
+              padding: "12px 28px",
               border: "none",
-              borderRadius: "8px",
+              borderRadius: 999,
+              fontFamily: "'CabinetGrotesk', sans-serif",
+              fontWeight: 200,
+              fontSize: 11,
+              letterSpacing: ".18em",
+              textTransform: "uppercase",
               cursor: "pointer"
             }}
           >
@@ -114,74 +182,152 @@ export default function ClientBookings() {
           </button>
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {bookings.map(booking => {
-            const nights = Math.ceil((new Date(booking.check_out_date) - new Date(booking.check_in_date)) / (1000 * 60 * 60 * 24));
-            
+            const nights = Math.ceil(
+              (new Date(booking.check_out_date) - new Date(booking.check_in_date)) /
+              (1000 * 60 * 60 * 24)
+            );
+            const isConfirmed = booking.booking_status === "confirmed";
+
             return (
-              <div key={booking.booking_id} style={{
-                background: "white",
-                borderRadius: "12px",
-                border: "1px solid #E4DDD4",
-                overflow: "hidden"
-              }}>
+              <div
+                key={booking.booking_id}
+                style={{
+                  background: "#FDFCFB",
+                  borderRadius: 16,
+                  border: "1px solid #E4DDD4",
+                  overflow: "hidden"
+                }}
+              >
+                {/* card header */}
                 <div style={{
-                  padding: "20px",
+                  padding: "20px 28px",
                   borderBottom: "1px solid #F0EBE4",
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
                   flexWrap: "wrap",
-                  gap: "12px"
+                  gap: 12
                 }}>
                   <div>
-                    <h3 style={{ fontSize: "18px" }}>Room {booking.rooms?.room_number}</h3>
-                    <p style={{ color: "#6B6560", fontSize: "14px" }}>{booking.rooms?.room_type}</p>
+                    <div style={{
+                      fontFamily: "'Soria', serif",
+                      fontSize: 18,
+                      color: "#1E1C1A",
+                      marginBottom: 3
+                    }}>
+                      Room {booking.rooms?.room_number}
+                    </div>
+                    <div style={{ color: "#A09890", fontSize: 12, fontWeight: 200 }}>
+                      {booking.rooms?.room_type} · Booking #{booking.booking_id}
+                    </div>
                   </div>
                   {getStatusBadge(booking.booking_status)}
                 </div>
-                
-                <div style={{ padding: "20px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "16px" }}>
-                  <div>
-                    <div style={{ fontSize: "12px", color: "#A09890", marginBottom: "4px" }}>Check-in</div>
-                    <div style={{ fontWeight: "bold" }}>{formatDate(booking.check_in_date)}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: "12px", color: "#A09890", marginBottom: "4px" }}>Check-out</div>
-                    <div style={{ fontWeight: "bold" }}>{formatDate(booking.check_out_date)}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: "12px", color: "#A09890", marginBottom: "4px" }}>Nights</div>
-                    <div style={{ fontWeight: "bold" }}>{nights}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: "12px", color: "#A09890", marginBottom: "4px" }}>Guests</div>
-                    <div style={{ fontWeight: "bold" }}>{booking.guests || 1}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: "12px", color: "#A09890", marginBottom: "4px" }}>Total Amount</div>
-                    <div style={{ fontWeight: "bold", color: "#4A7C72" }}>₹{booking.total_price?.toLocaleString("en-IN") || 0}</div>
-                  </div>
+
+                {/* booking details grid */}
+                <div style={{
+                  padding: "20px 28px",
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                  gap: 16
+                }}>
+                  {[
+                    ["Check-in",     formatDate(booking.check_in_date)],
+                    ["Check-out",    formatDate(booking.check_out_date)],
+                    ["Nights",       nights],
+                    ["Guests",       booking.guests || 1],
+                    ["Total Amount", `₹${(booking.total_price || 0).toLocaleString("en-IN")}`],
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <div style={{
+                        fontSize: 10,
+                        color: "#A09890",
+                        textTransform: "uppercase",
+                        letterSpacing: ".14em",
+                        fontWeight: 200,
+                        marginBottom: 4
+                      }}>
+                        {label}
+                      </div>
+                      <div style={{
+                        fontFamily: label === "Total Amount" ? "'Soria', serif" : "inherit",
+                        fontSize: label === "Total Amount" ? 16 : 14,
+                        fontWeight: label === "Total Amount" ? 400 : 200,
+                        color: label === "Total Amount" ? "#4A7C72" : "#1E1C1A"
+                      }}>
+                        {value}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                
-                {booking.booking_status === "confirmed" && (
-                  <div style={{ padding: "16px 20px", borderTop: "1px solid #F0EBE4", background: "#FDFCFB" }}>
+
+                {/* action bar — always visible */}
+                <div style={{
+                  padding: "14px 28px",
+                  borderTop: "1px solid #F0EBE4",
+                  background: "#F7F3EE",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  flexWrap: "wrap"
+                }}>
+
+                  {/* View Invoice button — shown for all bookings */}
+                  <button
+                    onClick={() => navigate(`/client/bookings/${booking.booking_id}/invoice`)}
+                    style={{
+                      background: "#4A7C72",
+                      color: "#fff",
+                      border: "none",
+                      padding: "8px 20px",
+                      borderRadius: 999,
+                      fontFamily: "'CabinetGrotesk', sans-serif",
+                      fontWeight: 200,
+                      fontSize: 10,
+                      letterSpacing: ".16em",
+                      textTransform: "uppercase",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8
+                    }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                      <polyline points="14 2 14 8 20 8"/>
+                      <line x1="16" y1="13" x2="8" y2="13"/>
+                      <line x1="16" y1="17" x2="8" y2="17"/>
+                    </svg>
+                    View Invoice
+                  </button>
+
+                  {/* Cancel button — only for confirmed bookings */}
+                  {isConfirmed && (
                     <button
                       onClick={() => cancelBooking(booking.booking_id)}
                       disabled={cancelling === booking.booking_id}
                       style={{
-                        background: "#B45C5C",
-                        color: "white",
-                        border: "none",
-                        padding: "8px 16px",
-                        borderRadius: "6px",
-                        cursor: cancelling === booking.booking_id ? "not-allowed" : "pointer"
+                        background: "transparent",
+                        color: "#B45C5C",
+                        border: "1px solid #B45C5C",
+                        padding: "8px 20px",
+                        borderRadius: 999,
+                        fontFamily: "'CabinetGrotesk', sans-serif",
+                        fontWeight: 200,
+                        fontSize: 10,
+                        letterSpacing: ".16em",
+                        textTransform: "uppercase",
+                        cursor: cancelling === booking.booking_id ? "not-allowed" : "pointer",
+                        opacity: cancelling === booking.booking_id ? 0.6 : 1
                       }}
                     >
                       {cancelling === booking.booking_id ? "Cancelling..." : "Cancel Booking"}
                     </button>
-                  </div>
-                )}
+                  )}
+                </div>
+
               </div>
             );
           })}

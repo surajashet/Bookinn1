@@ -1,5 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 
+const ACCENT = "#4A7C72";
+const ACCENT_L = "#6A9E94";
+
 export default function BookinnChatbot() {
   const [isOpen, setIsOpen] = useState(false);
   const [message, setMessage] = useState("");
@@ -50,10 +53,10 @@ export default function BookinnChatbot() {
         onClick={() => setIsOpen(!isOpen)}
         style={{
           position: "fixed", bottom: 28, right: 28, width: 56, height: 56,
-          borderRadius: "50%", background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
+          borderRadius: "50%", background: ACCENT,
           border: "none", color: "#fff", fontSize: 22, cursor: "pointer",
           zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: "0 4px 20px rgba(37,99,235,0.4)", transition: "transform .2s",
+          boxShadow: "0 4px 20px rgba(74,124,114,0.3)", transition: "transform .2s",
         }}
         onMouseEnter={e => e.currentTarget.style.transform = "scale(1.1)"}
         onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
@@ -64,47 +67,50 @@ export default function BookinnChatbot() {
       {/* Chat Window */}
       {isOpen && (
         <div style={{
-          position: "fixed", bottom: 96, right: 28, width: 360,
-          height: 500, background: "#fff", borderRadius: 20,
-          boxShadow: "0 20px 60px rgba(0,0,0,0.15)", display: "flex",
-          flexDirection: "column", overflow: "hidden", zIndex: 1000,
-          animation: "chatFadeUp 0.3s ease",
+          position: "fixed", bottom: 96, right: 28, width: 380,
+          height: 540, background: "#fff", borderRadius: 24,
+          boxShadow: "0 20px 40px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05)",
+          display: "flex", flexDirection: "column", overflow: "hidden", zIndex: 1000,
+          animation: "chatFadeUp 0.3s ease", fontFamily: "'CabinetGrotesk', sans-serif",
         }}>
           {/* Header */}
           <div style={{
-            background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
-            padding: "16px 20px", display: "flex", alignItems: "center",
-            justifyContent: "space-between",
+            background: ACCENT, padding: "20px 24px", display: "flex", alignItems: "center",
+            justifyContent: "space-between", borderBottom: `1px solid ${ACCENT_L}`,
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <div style={{
-                width: 40, height: 40, borderRadius: "50%",
-                background: "rgba(255,255,255,0.2)",
+                width: 44, height: 44, borderRadius: "50%",
+                background: "rgba(255,255,255,0.15)",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 18,
-              }}>🤖</div>
+                fontSize: 20, backdropFilter: "blur(4px)",
+              }}>🏨</div>
               <div>
-                <div style={{ color: "#fff", fontWeight: 600, fontSize: 15 }}>Bookinn Assistant</div>
-                <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 11 }}>Online • Replies instantly</div>
+                <div style={{ color: "#fff", fontWeight: 500, fontSize: 15, letterSpacing: "-0.2px" }}>Bookinn Assistant</div>
+                <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 11, letterSpacing: "0.3px" }}>Available 24/7</div>
               </div>
             </div>
             <button onClick={() => setIsOpen(false)} style={{
-              background: "rgba(255,255,255,0.15)", border: "none", color: "#fff",
-              width: 30, height: 30, borderRadius: 10, cursor: "pointer", fontSize: 16,
+              background: "rgba(255,255,255,0.1)", border: "none", color: "#fff",
+              width: 32, height: 32, borderRadius: 12, cursor: "pointer", fontSize: 16,
               display: "flex", alignItems: "center", justifyContent: "center",
-            }}>✕</button>
+              transition: "background 0.2s",
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.2)"}
+            onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
+            >✕</button>
           </div>
 
           {/* Messages */}
           <div style={{
-            flex: 1, overflowY: "auto", padding: "16px", display: "flex",
-            flexDirection: "column", gap: 12, background: "#f8fafc",
+            flex: 1, overflowY: "auto", padding: "20px", display: "flex",
+            flexDirection: "column", gap: 12, background: "#FDFCFB",
           }}>
             {messages.length === 0 ? (
-              <div style={{ textAlign: "center", color: "#94a3b8", marginTop: 40 }}>
-                <div style={{ fontSize: 40, marginBottom: 12 }}>👋</div>
-                <p style={{ fontWeight: 600, color: "#475569", margin: 0 }}>Hello!</p>
-                <p style={{ fontSize: 13, margin: "4px 0 0" }}>How can I help you today?</p>
+              <div style={{ textAlign: "center", marginTop: "auto", marginBottom: "auto", padding: "20px 0" }}>
+                <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.8 }}>✨</div>
+                <p style={{ fontWeight: 400, color: "#1E1C1A", margin: 0, fontSize: 14, fontFamily: "'Soria', serif" }}>Hello there</p>
+                <p style={{ fontSize: 12, margin: "8px 0 0", color: "#6B6560", fontFamily: "'CabinetGrotesk', sans-serif", fontWeight: 200 }}>How can I assist with your stay?</p>
               </div>
             ) : (
               messages.map((msg, i) => (
@@ -115,27 +121,30 @@ export default function BookinnChatbot() {
                 }}>
                   {msg.sender === "bot" && (
                     <div style={{
-                      width: 28, height: 28, borderRadius: "50%", background: "#2563eb",
+                      width: 28, height: 28, borderRadius: "50%", background: ACCENT,
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      color: "#fff", fontSize: 11, fontWeight: 700, flexShrink: 0,
-                    }}>AI</div>
+                      color: "#fff", fontSize: 12, fontWeight: 400, flexShrink: 0,
+                    }}>🏨</div>
                   )}
                   <div style={{
-                    maxWidth: "75%", padding: "10px 14px", borderRadius: 16,
-                    fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word",
-                    background: msg.sender === "user" ? "#2563eb" : "#fff",
-                    color: msg.sender === "user" ? "#fff" : "#1e293b",
+                    maxWidth: "75%", padding: "12px 16px", borderRadius: 16,
+                    fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word",
+                    background: msg.sender === "user" ? ACCENT : "#fff",
+                    color: msg.sender === "user" ? "#fff" : "#1E1C1A",
                     borderBottomRightRadius: msg.sender === "user" ? 4 : 16,
                     borderBottomLeftRadius: msg.sender === "bot" ? 4 : 16,
-                    boxShadow: msg.sender === "bot" ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
+                    boxShadow: msg.sender === "bot" ? "0 2px 8px rgba(0,0,0,0.04)" : "none",
+                    border: msg.sender === "bot" ? "1px solid #EDE7DE" : "none",
+                    fontFamily: "'CabinetGrotesk', sans-serif",
+                    fontWeight: 200,
                   }}>
                     {msg.text}
                   </div>
                   {msg.sender === "user" && (
                     <div style={{
-                      width: 28, height: 28, borderRadius: "50%", background: "#e2e8f0",
+                      width: 28, height: 28, borderRadius: "50%", background: "#EDE7DE",
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      color: "#64748b", fontSize: 11, fontWeight: 700, flexShrink: 0,
+                      color: ACCENT, fontSize: 11, fontWeight: 400, flexShrink: 0,
                     }}>You</div>
                   )}
                 </div>
@@ -145,37 +154,46 @@ export default function BookinnChatbot() {
           </div>
 
           {/* Input */}
-          <div style={{ padding: "12px 16px", background: "#fff", borderTop: "1px solid #e2e8f0" }}>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+          <div style={{ padding: "16px 20px", background: "#fff", borderTop: "1px solid #EDE7DE" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 12 }}>
               <textarea
                 ref={textareaRef}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Type your message..."
+                placeholder="Write a message..."
                 rows={1}
                 style={{
-                  flex: 1, border: "1px solid #e2e8f0", borderRadius: 12,
-                  padding: "10px 14px", fontSize: 13, fontFamily: "inherit",
+                  flex: 1, border: "1px solid #EDE7DE", borderRadius: 16,
+                  padding: "10px 16px", fontSize: 12, fontFamily: "'CabinetGrotesk', sans-serif",
                   outline: "none", resize: "none", maxHeight: 100,
-                  color: "#1e293b", background: "#f8fafc", lineHeight: 1.5,
+                  color: "#1E1C1A", background: "#FDFCFB", lineHeight: 1.5,
+                  fontWeight: 200, transition: "border-color 0.2s",
                 }}
+                onFocus={e => e.currentTarget.style.borderColor = ACCENT}
+                onBlur={e => e.currentTarget.style.borderColor = "#EDE7DE"}
               />
               <button
                 onClick={sendMessage}
                 disabled={!message.trim()}
                 style={{
-                  width: 40, height: 40, borderRadius: 12, border: "none",
-                  background: message.trim() ? "#2563eb" : "#e2e8f0",
-                  color: message.trim() ? "#fff" : "#94a3b8",
+                  width: 40, height: 40, borderRadius: 40, border: "none",
+                  background: message.trim() ? ACCENT : "#EDE7DE",
+                  color: message.trim() ? "#fff" : "#A09890",
                   cursor: message.trim() ? "pointer" : "not-allowed",
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 16, flexShrink: 0,
+                  fontSize: 16, flexShrink: 0, transition: "all 0.2s",
+                }}
+                onMouseEnter={e => {
+                  if (message.trim()) e.currentTarget.style.background = ACCENT_L;
+                }}
+                onMouseLeave={e => {
+                  if (message.trim()) e.currentTarget.style.background = ACCENT;
                 }}
               >➤</button>
             </div>
-            <p style={{ fontSize: 11, color: "#94a3b8", textAlign: "center", margin: "6px 0 0" }}>
-              Enter to send • Shift+Enter for new line
+            <p style={{ fontSize: 9, color: "#A09890", textAlign: "center", margin: "8px 0 0", letterSpacing: "0.3px", fontFamily: "'CabinetGrotesk', sans-serif", fontWeight: 200 }}>
+              Enter to send • Shift + Enter for new line
             </p>
           </div>
         </div>
@@ -183,8 +201,16 @@ export default function BookinnChatbot() {
 
       <style>{`
         @keyframes chatFadeUp {
-          from { opacity: 0; transform: translateY(16px); }
+          from { opacity: 0; transform: translateY(20px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        
+        * {
+          box-sizing: border-box;
+        }
+        
+        textarea:focus {
+          outline: none;
         }
       `}</style>
     </>

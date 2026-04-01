@@ -93,6 +93,9 @@ function App() {
             </ProtectedRoute>
           } 
         />
+        <Route 
+        path="/client/bookings/:id/invoice" 
+        element={<BookingInvoice />} />
         
         {/* Admin Routes */}
         <Route 
