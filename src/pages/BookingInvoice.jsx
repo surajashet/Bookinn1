@@ -362,7 +362,7 @@ export default function BookingInvoice() {
           <div style={{ fontFamily: "'Soria', serif", fontStyle: "italic", fontSize: 16, color: T.inkLight }}>BookInn</div>
           <div style={{ fontSize: 10, color: T.inkFaint, fontWeight: 200, letterSpacing: ".08em" }}>© 2026 BookInn. All rights reserved.</div>
           <div style={{ fontSize: 10, color: T.inkFaint, fontWeight: 200, fontFamily: "monospace" }}>
-            INV-{String(booking.booking_id).padStart(4, "0")}-{new Date(booking.created_at).getFullYear()}
+            -{String(booking.booking_id).padStart(4, "0")}-{new Date(booking.created_at).getFullYear()}
           </div>
         </div>
       </div>

@@ -23,11 +23,10 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   return (
     <>
       {children}
-      <BookinnChatbot />
+      <BookinnChatbot userId={user.user_id} />  {/* ← just add this */}
     </>
   );
 };
-
 function App() {
   return (
     <BrowserRouter>
