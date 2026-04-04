@@ -1,128 +1,309 @@
+import Razorpay from "razorpay";
+import crypto from "crypto";
 import supabase from "../config/supabaseClient.js";
+import { sendBookingConfirmation } from "../utils/emailService.js";
 
-// Process payment
+const getRazorpay = () => {
+  if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+    throw new Error("RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET missing in .env");
+  }
+  return new Razorpay({
+    key_id:     process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET,
+  });
+};
+
+// ── Create Razorpay Order ─────────────────────────────────────────────────────
+export const createRazorpayOrder = async (req, res) => {
+  try {
+    const { booking_id } = req.body;
+
+    if (!booking_id)
+      return res.status(400).json({ success: false, error: "booking_id is required" });
+
+    const { data: booking, error: bErr } = await supabase
+      .from("bookings")
+      .select("*, rooms(*), Users(*)")
+      .eq("booking_id", booking_id)
+      .single();
+
+    if (bErr || !booking)
+      return res.status(404).json({ success: false, error: "Booking not found" });
+
+    const room = booking.rooms;
+    const user = booking.Users;
+
+    if (!room || !user)
+      return res.status(400).json({ success: false, error: "Booking is missing room or user data" });
+
+    const n = Math.max(
+      1,
+      Math.ceil(
+        (new Date(booking.check_out_date) - new Date(booking.check_in_date)) / 86400000
+      )
+    );
+
+    const base_amount  = room.base_price * n;
+    const cgst_amount  = parseFloat((base_amount * 0.06).toFixed(2));
+    const sgst_amount  = parseFloat((base_amount * 0.06).toFixed(2));
+    const total_tax    = cgst_amount + sgst_amount;
+    const serviceFee   = 150;
+    const total_amount = base_amount + total_tax + serviceFee;
+
+    const razorpay = getRazorpay();
+    const order = await razorpay.orders.create({
+      amount:   Math.round(total_amount * 100),
+      currency: "INR",
+      receipt:  `booking_${booking_id}`,
+      notes:    { booking_id: String(booking_id), user_id: String(user.user_id) },
+    });
+
+    const invoiceNumber = `INV-${String(booking_id).padStart(4, "0")}-${new Date().getFullYear()}`;
+
+    console.log("📋 Inserting invoice:", invoiceNumber);
+
+    const { data: invoice, error: invErr } = await supabase
+      .from("Invoices")
+      .insert([{
+        booking_id,
+        user_id:        user.user_id,
+        invoice_number: invoiceNumber,
+        base_amount,
+        cgst_amount,
+        sgst_amount,
+        total_tax,
+        total_amount,
+        payment_state:  "pending",
+        created_at:     new Date().toISOString(),
+      }])
+      .select()
+      .single();
+
+    if (invErr) {
+      console.error("❌ Invoice insert error:", invErr.message, invErr.details, invErr.hint);
+      throw new Error(`Invoice insert failed: ${invErr.message} | ${invErr.details || ""} | ${invErr.hint || ""}`);
+    }
+
+    console.log("✅ Razorpay order created:", order.id);
+
+    return res.json({
+      success: true,
+      data: {
+        order_id:       order.id,
+        amount:         order.amount,
+        currency:       order.currency,
+        invoice_id:     invoice.invoice_id,
+        invoice_number: invoiceNumber,
+        key_id:         process.env.RAZORPAY_KEY_ID,
+        prefill: {
+          name:  user.username,
+          email: user.email,
+        },
+      },
+    });
+
+  } catch (err) {
+    console.error("❌ createRazorpayOrder error:", err?.message || JSON.stringify(err));
+    return res.status(500).json({
+      success: false,
+      error: err?.message || err?.details || JSON.stringify(err) || "Unknown error",
+    });
+  }
+};
+
+// ── Verify Payment + Save to DB + Send Email ──────────────────────────────────
+export const verifyRazorpayPayment = async (req, res) => {
+  try {
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      invoice_id,
+      booking_id,
+    } = req.body;
+
+    // 1. Signature check
+    const body     = razorpay_order_id + "|" + razorpay_payment_id;
+    const expected = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(body)
+      .digest("hex");
+
+    if (expected !== razorpay_signature)
+      return res.status(400).json({ success: false, error: "Invalid payment signature" });
+
+    // 2. Fetch invoice
+    const { data: invoice, error: invErr } = await supabase
+      .from("Invoices")
+      .select("*")
+      .eq("invoice_id", invoice_id)
+      .single();
+
+    if (invErr || !invoice)
+      return res.status(404).json({ success: false, error: "Invoice not found" });
+
+    // 3. Insert Payment row
+    const { data: payment, error: payErr } = await supabase
+      .from("Payments")
+      .insert([{
+        invoice_id,
+        amount_paid:           invoice.total_amount,
+        payment_paid:          String(invoice.total_amount),
+        payment_method:        "razorpay",
+        payment_status:        "completed",
+        transaction_reference: razorpay_payment_id,
+        payment_date:          new Date().toISOString(),
+      }])
+      .select()
+      .single();
+
+    if (payErr) throw payErr;
+
+    // 4. Mark Invoice paid
+    await supabase
+      .from("Invoices")
+      .update({
+        payment_state:   "paid",
+        payment_methods: "razorpay",
+        invoice_data:    JSON.stringify({ razorpay_order_id, razorpay_payment_id }),
+      })
+      .eq("invoice_id", invoice_id);
+
+    // 5. Confirm booking
+    await supabase
+      .from("bookings")
+      .update({ booking_status: "confirmed", updated_at: new Date().toISOString() })
+      .eq("booking_id", booking_id);
+
+    // 6. Fetch full booking + room + user for email and room update
+    const { data: booking } = await supabase
+      .from("bookings")
+      .select("*, rooms(*), Users(*)")
+      .eq("booking_id", booking_id)
+      .single();
+
+    // 7. Mark room as reserved
+    if (booking?.rooms?.room_id) {
+      await supabase
+        .from("rooms")
+        .update({ room_status: "reserved", updated_at: new Date().toISOString() })
+        .eq("room_id", booking.rooms.room_id);
+    }
+
+    // 8. Send confirmation email + PDF invoice
+    if (booking) {
+      await sendBookingConfirmation(booking, booking.Users, booking.rooms);
+    }
+
+    // 9. Activity log
+    await supabase
+      .from("Activity Logs")
+      .insert([{
+        user_id:     booking?.Users?.user_id || null,
+        action:      "RAZORPAY_PAYMENT_SUCCESS",
+        entity_type: "payment",
+        description: `Razorpay payment ${razorpay_payment_id} verified for booking ${booking_id}`,
+      }]);
+
+    console.log("✅ Payment verified, booking confirmed:", booking_id);
+
+    return res.json({
+      success: true,
+      message: "Payment verified. Booking confirmed. Email sent.",
+      data:    { payment, invoice_id, booking_id },
+    });
+
+  } catch (err) {
+    console.error("❌ verifyRazorpayPayment error:", err?.message || JSON.stringify(err));
+    return res.status(500).json({
+      success: false,
+      error: err?.message || err?.details || JSON.stringify(err) || "Unknown error",
+    });
+  }
+};
+
+// ── Process Payment (manual) ──────────────────────────────────────────────────
 export const processPayment = async (req, res) => {
   try {
     const { invoice_id } = req.params;
-    const {
-      amount_paid,
-      payment_method,
-      transaction_reference
-    } = req.body;
+    const { amount_paid, payment_method, transaction_reference } = req.body;
 
-    // Get invoice
     const { data: invoice, error: invoiceError } = await supabase
       .from("Invoices")
       .select("*")
       .eq("invoice_id", invoice_id)
       .single();
 
-    if (invoiceError) {
-      return res.status(404).json({ 
-        success: false,
-        error: "Invoice not found" 
-      });
-    }
+    if (invoiceError)
+      return res.status(404).json({ success: false, error: "Invoice not found" });
 
-    // Create payment record
     const { data: payment, error } = await supabase
       .from("Payments")
       .insert([{
         invoice_id,
-        amount_paid: amount_paid || invoice.total_amount,
+        amount_paid:           amount_paid || invoice.total_amount,
         payment_method,
-        payment_status: "completed",
+        payment_status:        "completed",
         transaction_reference,
-        payment_date: new Date().toISOString()
+        payment_date:          new Date().toISOString(),
       }])
       .select()
       .single();
 
     if (error) throw error;
 
-    // Update invoice payment state
-    const totalPaid = amount_paid || invoice.total_amount;
+    const totalPaid    = amount_paid || invoice.total_amount;
     const paymentState = totalPaid >= invoice.total_amount ? "paid" : "partial";
 
     await supabase
       .from("Invoices")
-      .update({ 
-        payment_state: paymentState,
-        payment_methods: payment_method,
-        updated_at: new Date().toISOString()
-      })
+      .update({ payment_state: paymentState, payment_methods: payment_method })
       .eq("invoice_id", invoice_id);
 
-    // Update booking status if fully paid
     if (paymentState === "paid") {
       await supabase
         .from("bookings")
-        .update({ 
-          booking_status: "confirmed",
-          updated_at: new Date().toISOString()
-        })
+        .update({ booking_status: "confirmed", updated_at: new Date().toISOString() })
         .eq("booking_id", invoice.booking_id);
     }
 
-    // Log activity
     await supabase
       .from("Activity Logs")
       .insert([{
-        user_id: req.user?.id || null,
-        action: "PROCESS_PAYMENT",
+        user_id:     req.user?.id || null,
+        action:      "PROCESS_PAYMENT",
         entity_type: "payment",
-        description: `Payment processed for invoice ${invoice_id}`
+        description: `Payment processed for invoice ${invoice_id}`,
       }]);
 
-    res.status(201).json({
-      success: true,
-      message: "Payment processed successfully",
-      data: payment
-    });
+    res.status(201).json({ success: true, message: "Payment processed successfully", data: payment });
   } catch (error) {
     console.error("Process payment error:", error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message 
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 
-// Get payment by ID
+// ── Get Payment by ID ─────────────────────────────────────────────────────────
 export const getPayment = async (req, res) => {
   try {
     const { payment_id } = req.params;
 
     const { data: payment, error } = await supabase
       .from("Payments")
-      .select(`
-        *,
-        Invoices (*, bookings (*, rooms (*), Users (*)))
-      `)
+      .select(`*, Invoices (*, bookings (*, rooms (*), Users (*)))`)
       .eq("payment_id", payment_id)
       .single();
 
-    if (error) {
-      return res.status(404).json({ 
-        success: false,
-        error: "Payment not found" 
-      });
-    }
+    if (error)
+      return res.status(404).json({ success: false, error: "Payment not found" });
 
-    res.json({
-      success: true,
-      data: payment
-    });
+    res.json({ success: true, data: payment });
   } catch (error) {
-    console.error("Get payment error:", error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message 
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 
-// Get all payments for an invoice
+// ── Get Payments for an Invoice ───────────────────────────────────────────────
 export const getInvoicePayments = async (req, res) => {
   try {
     const { invoice_id } = req.params;
@@ -135,132 +316,82 @@ export const getInvoicePayments = async (req, res) => {
 
     if (error) throw error;
 
-    res.json({
-      success: true,
-      count: data.length,
-      data: data
-    });
+    res.json({ success: true, count: data.length, data });
   } catch (error) {
-    console.error("Get invoice payments error:", error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message 
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 
-// Get all payments (with filters)
+// ── Get All Payments (admin) ──────────────────────────────────────────────────
 export const getAllPayments = async (req, res) => {
   try {
     const { payment_status, payment_method, start_date, end_date } = req.query;
 
     let query = supabase
       .from("Payments")
-      .select(`
-        *,
-        Invoices (*, bookings (*, rooms (*), Users (*)))
-      `);
+      .select(`*, Invoices (*, bookings (*, rooms (*), Users (*)))`);
 
-    if (payment_status) {
-      query = query.eq("payment_status", payment_status);
-    }
-    if (payment_method) {
-      query = query.eq("payment_method", payment_method);
-    }
-    if (start_date) {
-      query = query.gte("payment_date", start_date);
-    }
-    if (end_date) {
-      query = query.lte("payment_date", end_date);
-    }
+    if (payment_status) query = query.eq("payment_status", payment_status);
+    if (payment_method)  query = query.eq("payment_method",  payment_method);
+    if (start_date)      query = query.gte("payment_date", start_date);
+    if (end_date)        query = query.lte("payment_date", end_date);
 
     query = query.order("payment_date", { ascending: false });
 
     const { data, error } = await query;
-
     if (error) throw error;
 
-    res.json({
-      success: true,
-      count: data.length,
-      data: data
-    });
+    res.json({ success: true, count: data.length, data });
   } catch (error) {
-    console.error("Get all payments error:", error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message 
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 
-// Refund payment
+// ── Refund Payment ────────────────────────────────────────────────────────────
 export const refundPayment = async (req, res) => {
   try {
     const { payment_id } = req.params;
     const { refund_reason } = req.body;
 
-    // Get payment
     const { data: payment, error: paymentError } = await supabase
       .from("Payments")
       .select("*, Invoices(*)")
       .eq("payment_id", payment_id)
       .single();
 
-    if (paymentError) {
-      return res.status(404).json({ 
-        success: false,
-        error: "Payment not found" 
-      });
-    }
+    if (paymentError)
+      return res.status(404).json({ success: false, error: "Payment not found" });
 
-    // Update payment status to refunded
     const { data, error } = await supabase
       .from("Payments")
-      .update({ 
-        payment_status: "refunded",
-        updated_at: new Date().toISOString()
-      })
+      .update({ payment_status: "refunded" })
       .eq("payment_id", payment_id)
       .select()
       .single();
 
     if (error) throw error;
 
-    // Update invoice payment state
     await supabase
       .from("Invoices")
-      .update({ 
-        payment_state: "refunded",
-        updated_at: new Date().toISOString()
-      })
+      .update({ payment_state: "refunded" })
       .eq("invoice_id", payment.invoice_id);
 
-    // Log activity
     await supabase
       .from("Activity Logs")
       .insert([{
-        user_id: req.user?.id || null,
-        action: "REFUND_PAYMENT",
+        user_id:     req.user?.id || null,
+        action:      "REFUND_PAYMENT",
         entity_type: "payment",
-        description: `Payment ${payment_id} refunded: ${refund_reason || 'No reason provided'}`
+        description: `Payment ${payment_id} refunded: ${refund_reason || "No reason provided"}`,
       }]);
 
-    res.json({
-      success: true,
-      message: "Payment refunded successfully",
-      data
-    });
+    res.json({ success: true, message: "Payment refunded successfully", data });
   } catch (error) {
-    console.error("Refund payment error:", error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message 
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 
-// Get payment statistics
+// ── Payment Stats (admin) ─────────────────────────────────────────────────────
 export const getPaymentStats = async (req, res) => {
   try {
     const { data: payments, error } = await supabase
@@ -269,13 +400,12 @@ export const getPaymentStats = async (req, res) => {
 
     if (error) throw error;
 
-    // Calculate statistics
-    const totalPayments = payments.length;
-    const totalAmount = payments.reduce((sum, p) => sum + (p.amount_paid || 0), 0);
-    const completedPayments = payments.filter(p => p.payment_status === 'completed').length;
-    const pendingPayments = payments.filter(p => p.payment_status === 'pending').length;
-    const failedPayments = payments.filter(p => p.payment_status === 'failed').length;
-    const refundedPayments = payments.filter(p => p.payment_status === 'refunded').length;
+    const totalPayments     = payments.length;
+    const totalAmount       = payments.reduce((sum, p) => sum + (p.amount_paid || 0), 0);
+    const completedPayments = payments.filter((p) => p.payment_status === "completed").length;
+    const pendingPayments   = payments.filter((p) => p.payment_status === "pending").length;
+    const failedPayments    = payments.filter((p) => p.payment_status === "failed").length;
+    const refundedPayments  = payments.filter((p) => p.payment_status === "refunded").length;
 
     res.json({
       success: true,
@@ -284,18 +414,14 @@ export const getPaymentStats = async (req, res) => {
         totalAmount,
         byStatus: {
           completed: completedPayments,
-          pending: pendingPayments,
-          failed: failedPayments,
-          refunded: refundedPayments
+          pending:   pendingPayments,
+          failed:    failedPayments,
+          refunded:  refundedPayments,
         },
-        averagePayment: totalPayments > 0 ? (totalAmount / totalPayments).toFixed(2) : 0
-      }
+        averagePayment: totalPayments > 0 ? (totalAmount / totalPayments).toFixed(2) : 0,
+      },
     });
   } catch (error) {
-    console.error("Get payment stats error:", error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message 
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 };

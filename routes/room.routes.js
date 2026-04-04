@@ -4,16 +4,17 @@ import {
   getRooms,
   getRoomById,
   updateRoom,
-  updateRoomStatus,
+  // updateRoomStatus,  // REMOVED - no longer needed
   deleteRoom,
   checkRoomAvailability,
   getRoomStats,
-  bulkUpdateRoomStatus,
+  // bulkUpdateRoomStatus,  // REMOVED - no longer needed
   getClientRooms,
   checkRoomBookings,
   forceDeleteRoom
+  // fixStuckRoomStatuses  // REMOVED - no longer needed since no room_status
 } from "../controllers/room.controller.js";
-import { authenticateToken, authorizeAdmin, authorizeStaff } from "../middleware/auth.middleware.js";
+import { authenticateToken, authorizeAdmin } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 
@@ -24,8 +25,7 @@ router.get("/availability/:room_id", checkRoomAvailability);
 router.get("/:id", getRoomById);
 router.get("/client", getClientRooms);
 
-// Staff can update room status (cleaning, maintenance etc)
-router.patch("/:room_id/status", authenticateToken, authorizeStaff, updateRoomStatus);
+// REMOVED: room status update route - no longer needed
 
 // Admin only routes
 router.post("/", authenticateToken, authorizeAdmin, createRoom);
@@ -33,6 +33,7 @@ router.put("/:room_id", authenticateToken, authorizeAdmin, updateRoom);
 router.delete("/:room_id", authenticateToken, authorizeAdmin, deleteRoom);
 router.delete("/:room_id/force", authenticateToken, authorizeAdmin, forceDeleteRoom);
 router.get("/:room_id/check-bookings", authenticateToken, authorizeAdmin, checkRoomBookings);
-router.post("/bulk/status", authenticateToken, authorizeAdmin, bulkUpdateRoomStatus);
+
+// REMOVED: bulk/status and fix-stuck-statuses routes
 
 export default router;

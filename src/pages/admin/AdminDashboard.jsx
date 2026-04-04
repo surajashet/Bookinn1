@@ -1,28 +1,56 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import toast, { Toaster } from "react-hot-toast";
+import {
+  Chart as ChartJS,
+  ArcElement,
+  Tooltip,
+  Legend,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  PointElement,
+  LineElement,
+  Filler
+} from 'chart.js';
+import { Pie, Bar, Line } from 'react-chartjs-2';
+
+// Register ChartJS components
+ChartJS.register(
+  ArcElement,
+  Tooltip,
+  Legend,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  PointElement,
+  LineElement,
+  Filler
+);
 
 const BASE_URL = "http://localhost:3001";
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("users");
+  const [activeTab, setActiveTab] = useState("overview");
   const [users, setUsers] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [showRoomModal, setShowRoomModal] = useState(false);
   const [editingRoom, setEditingRoom] = useState(null);
-  const [roomFilter, setRoomFilter] = useState("all");
   const [roomSearch, setRoomSearch] = useState("");
   const [imageFile, setImageFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
   const [roomForm, setRoomForm] = useState({
     room_number: "",
     room_type: "",
     floor_number: "",
     capacity: "",
     base_price: "",
-    room_status: "available",
     description: "",
     image_url: ""
   });
@@ -48,6 +76,7 @@ export default function AdminDashboard() {
     fetchRooms();
     fetchBookings();
     fetchTasks();
+    fetchConfigurations();
   }, []);
 
   const fetchUsers = async () => {
@@ -110,11 +139,70 @@ export default function AdminDashboard() {
       const data = await response.json();
       if (data.success) {
         setTasks(data.data);
+      } else if (Array.isArray(data)) {
+        setTasks(data);
+      } else {
+        setTasks([]);
       }
     } catch (error) {
       console.error("Error fetching tasks:", error);
+      setTasks([]);
     } finally {
       setLoading(prev => ({ ...prev, tasks: false }));
+    }
+  };
+
+  const fetchConfigurations = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${BASE_URL}/api/config`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (data.success && data.data) {
+        setConfig({
+          taxRate: data.data.taxRate || 18,
+          cancellationPolicy: data.data.cancellationPolicy || "24 hours before check-in for full refund",
+          earlyCheckIn: data.data.earlyCheckIn || "12:00 PM",
+          lateCheckOut: data.data.lateCheckOut || "2:00 PM"
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching configurations:", error);
+    }
+  };
+
+  const saveConfigurations = async () => {
+    setSavingConfig(true);
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${BASE_URL}/api/config/bulk`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          configurations: {
+            taxRate: config.taxRate,
+            cancellationPolicy: config.cancellationPolicy,
+            earlyCheckIn: config.earlyCheckIn,
+            lateCheckOut: config.lateCheckOut
+          }
+        })
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        toast.success("Configuration saved successfully!");
+      } else {
+        toast.error(data.error || "Failed to save configuration");
+      }
+    } catch (error) {
+      console.error("Error saving configurations:", error);
+      toast.error("Error saving configuration");
+    } finally {
+      setSavingConfig(false);
     }
   };
 
@@ -132,14 +220,14 @@ export default function AdminDashboard() {
       
       const data = await response.json();
       if (data.success) {
-        alert(`User role updated to ${newRole}`);
+        toast.success(`User role updated to ${newRole}`);
         fetchUsers();
       } else {
-        alert(data.message || "Failed to update role");
+        toast.error(data.message || "Failed to update role");
       }
     } catch (error) {
       console.error("Error updating role:", error);
-      alert("Error updating role");
+      toast.error("Error updating role");
     }
   };
 
@@ -147,18 +235,12 @@ export default function AdminDashboard() {
     e.preventDefault();
     setUploading(true);
     
-    console.log("=== Starting room submission ===");
-    console.log("Image file present:", !!imageFile);
-    console.log("Editing room:", editingRoom);
-    
     try {
       const token = localStorage.getItem("token");
       const url = editingRoom 
         ? `${BASE_URL}/api/rooms/${editingRoom.room_id}`
         : `${BASE_URL}/api/rooms`;
       const method = editingRoom ? "PUT" : "POST";
-      
-      console.log("Saving room to:", url);
       
       const response = await fetch(url, {
         method,
@@ -175,18 +257,14 @@ export default function AdminDashboard() {
       });
       
       const data = await response.json();
-      console.log("Room save response:", data);
       
       if (data.success) {
         const roomId = data.data.room_id || editingRoom?.room_id;
-        console.log("Room ID for image:", roomId);
         
         if (imageFile) {
-          console.log("Image file detected, starting upload...");
           const reader = new FileReader();
           reader.onloadend = async () => {
             const base64String = reader.result;
-            console.log("Image converted to base64, length:", base64String.length);
             
             const uploadResponse = await fetch(`${BASE_URL}/api/upload/room-image`, {
               method: "POST",
@@ -201,20 +279,16 @@ export default function AdminDashboard() {
             });
             
             const uploadData = await uploadResponse.json();
-            console.log("Upload response:", uploadData);
-            
             if (uploadData.success) {
-              alert(editingRoom ? "Room updated with image!" : "Room created with image!");
+              toast.success(editingRoom ? "Room updated with image!" : "Room created with image!");
             } else {
-              console.error("Upload failed:", uploadData);
-              alert("Room saved but image upload failed: " + (uploadData.error || "Unknown error"));
+              toast.error("Room saved but image upload failed");
             }
             setUploading(false);
           };
           reader.readAsDataURL(imageFile);
         } else {
-          console.log("No image file to upload");
-          alert(editingRoom ? "Room updated successfully!" : "Room created successfully!");
+          toast.success(editingRoom ? "Room updated successfully!" : "Room created successfully!");
           setUploading(false);
         }
         
@@ -227,44 +301,18 @@ export default function AdminDashboard() {
           floor_number: "",
           capacity: "",
           base_price: "",
-          room_status: "available",
           description: "",
           image_url: ""
         });
         fetchRooms();
       } else {
-        alert(data.error || "Failed to save room");
+        toast.error(data.error || "Failed to save room");
         setUploading(false);
       }
     } catch (error) {
       console.error("Error saving room:", error);
-      alert("Error saving room: " + error.message);
+      toast.error("Error saving room: " + error.message);
       setUploading(false);
-    }
-  };
-
-  const updateRoomStatus = async (roomId, newStatus) => {
-    try {
-      const token = localStorage.getItem("token");
-      const response = await fetch(`${BASE_URL}/api/rooms/${roomId}/status`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ room_status: newStatus })
-      });
-      
-      const data = await response.json();
-      if (data.success) {
-        alert(`Room status updated to ${newStatus}`);
-        fetchRooms();
-      } else {
-        alert(data.error || "Failed to update status");
-      }
-    } catch (error) {
-      console.error("Error updating status:", error);
-      alert("Error updating status");
     }
   };
 
@@ -282,29 +330,125 @@ export default function AdminDashboard() {
       
       const data = await response.json();
       if (data.success) {
-        alert("Room deleted successfully!");
+        toast.success("Room deleted successfully!");
         fetchRooms();
       } else {
-        alert(data.error || "Failed to delete room");
+        toast.error(data.error || "Failed to delete room");
       }
     } catch (error) {
       console.error("Error deleting room:", error);
-      alert("Error deleting room");
+      toast.error("Error deleting room");
     }
   };
 
   const filteredRooms = rooms.filter(room => {
-    const matchesFilter = roomFilter === "all" || room.room_status === roomFilter;
     const matchesSearch = roomSearch === "" || 
       room.room_number.toString().includes(roomSearch) ||
       room.room_type.toLowerCase().includes(roomSearch.toLowerCase());
-    return matchesFilter && matchesSearch;
+    return matchesSearch;
   });
 
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    navigate("/login");
+    localStorage.removeItem("tempPassword");
+    toast.success("Logged out successfully!");
+    setTimeout(() => {
+      window.location.href = "/";
+    }, 500);
+  };
+
+  // Calculate statistics for charts
+  const roomTypes = rooms.reduce((acc, room) => {
+    acc[room.room_type] = (acc[room.room_type] || 0) + 1;
+    return acc;
+  }, {});
+
+  const bookingStatus = bookings.reduce((acc, booking) => {
+    acc[booking.booking_status] = (acc[booking.booking_status] || 0) + 1;
+    return acc;
+  }, {});
+
+  const taskStatus = tasks.reduce((acc, task) => {
+    acc[task.status] = (acc[task.status] || 0) + 1;
+    return acc;
+  }, {});
+
+  // Monthly bookings data (last 6 months)
+  const getMonthlyBookings = () => {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthlyData = new Array(6).fill(0);
+    const now = new Date();
+    
+    bookings.forEach(booking => {
+      const bookingDate = new Date(booking.check_in_date);
+      const monthDiff = (now.getFullYear() - bookingDate.getFullYear()) * 12 + (now.getMonth() - bookingDate.getMonth());
+      if (monthDiff >= 0 && monthDiff < 6) {
+        monthlyData[5 - monthDiff - 1] += 1;
+      }
+    });
+    
+    return {
+      labels: months.slice(now.getMonth() - 5, now.getMonth() + 1),
+      data: monthlyData
+    };
+  };
+
+  const monthlyBookings = getMonthlyBookings();
+
+  // Chart configurations
+  const roomTypeChartData = {
+    labels: Object.keys(roomTypes),
+    datasets: [{
+      data: Object.values(roomTypes),
+      backgroundColor: ['#4A7C72', '#6A9E94', '#8BB8AE', '#A8CEC8', '#C4E0DA'],
+      borderWidth: 0,
+    }]
+  };
+
+  const bookingStatusChartData = {
+    labels: Object.keys(bookingStatus).map(s => s.charAt(0).toUpperCase() + s.slice(1)),
+    datasets: [{
+      data: Object.values(bookingStatus),
+      backgroundColor: ['#10B981', '#F59E0B', '#3B82F6', '#EF4444', '#8B5CF6'],
+      borderWidth: 0,
+    }]
+  };
+
+  const taskStatusChartData = {
+    labels: ['Pending', 'In Progress', 'Completed', 'Cancelled'],
+    datasets: [{
+      data: [
+        taskStatus.pending || 0,
+        taskStatus.in_progress || 0,
+        taskStatus.completed || 0,
+        taskStatus.cancelled || 0
+      ],
+      backgroundColor: ['#F59E0B', '#3B82F6', '#10B981', '#EF4444'],
+      borderWidth: 0,
+    }]
+  };
+
+  const monthlyBookingsChartData = {
+    labels: monthlyBookings.labels,
+    datasets: [{
+      label: 'Bookings',
+      data: monthlyBookings.data,
+      backgroundColor: '#4A7C72',
+      borderRadius: 8,
+    }]
+  };
+
+  const revenueChartData = {
+    labels: monthlyBookings.labels,
+    datasets: [{
+      label: 'Revenue (₹)',
+      data: monthlyBookings.data.map(count => count * 5000), // Approximate revenue calculation
+      borderColor: '#4A7C72',
+      backgroundColor: 'rgba(74, 124, 114, 0.1)',
+      fill: true,
+      tension: 0.4,
+    }]
   };
 
   const tabStyle = (tabName) => ({
@@ -319,12 +463,34 @@ export default function AdminDashboard() {
     transition: "all 0.3s"
   });
 
-  if (loading.users) {
+  const getTaskStatusStyle = (status) => {
+    const styles = {
+      pending: { bg: "#FEF3C7", color: "#D97706", label: "Pending" },
+      in_progress: { bg: "#DBEAFE", color: "#2563EB", label: "In Progress" },
+      completed: { bg: "#D1FAE5", color: "#059669", label: "Completed" },
+      cancelled: { bg: "#FEE2E2", color: "#DC2626", label: "Cancelled" }
+    };
+    return styles[status] || styles.pending;
+  };
+
+  const getPriorityStyle = (priority) => {
+    const styles = {
+      high: { bg: "#FEE2E2", color: "#DC2626", label: "High" },
+      normal: { bg: "#E0E7FF", color: "#4338CA", label: "Normal" },
+      low: { bg: "#D1FAE5", color: "#059669", label: "Low" }
+    };
+    return styles[priority] || styles.normal;
+  };
+
+  if (loading.users && loading.rooms && loading.bookings) {
     return <div style={{ padding: "40px", textAlign: "center" }}>Loading Admin Dashboard...</div>;
   }
 
   return (
     <div style={{ padding: "40px", maxWidth: "1400px", margin: "0 auto" }}>
+      <Toaster position="top-center" />
+      
+      {/* Header */}
       <div style={{ 
         display: "flex", 
         justifyContent: "space-between", 
@@ -357,6 +523,7 @@ export default function AdminDashboard() {
         </button>
       </div>
 
+      {/* Stats Cards */}
       <div style={{ 
         display: "grid", 
         gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
@@ -377,10 +544,11 @@ export default function AdminDashboard() {
         </div>
         <div style={{ background: "white", padding: "20px", borderRadius: "12px", border: "1px solid #E4DDD4", textAlign: "center" }}>
           <div style={{ fontSize: "32px", fontWeight: "bold", color: "#4A7C72" }}>{tasks.length}</div>
-          <div style={{ color: "#6B6560", marginTop: "8px" }}>Active Tasks</div>
+          <div style={{ color: "#6B6560", marginTop: "8px" }}>Total Tasks</div>
         </div>
       </div>
 
+      {/* Navigation Tabs */}
       <div style={{ 
         display: "flex", 
         gap: "10px", 
@@ -388,6 +556,7 @@ export default function AdminDashboard() {
         marginBottom: "30px",
         flexWrap: "wrap"
       }}>
+        <button style={tabStyle("overview")} onClick={() => setActiveTab("overview")}>Overview</button>
         <button style={tabStyle("users")} onClick={() => setActiveTab("users")}>Users</button>
         <button style={tabStyle("rooms")} onClick={() => setActiveTab("rooms")}>Rooms</button>
         <button style={tabStyle("bookings")} onClick={() => setActiveTab("bookings")}>Bookings</button>
@@ -395,6 +564,121 @@ export default function AdminDashboard() {
         <button style={tabStyle("config")} onClick={() => setActiveTab("config")}>Configuration</button>
       </div>
 
+      {/* Overview Tab with Charts */}
+      {activeTab === "overview" && (
+        <div>
+          {/* Charts Grid */}
+          <div style={{ 
+            display: "grid", 
+            gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", 
+            gap: "24px",
+            marginBottom: "32px"
+          }}>
+            {/* Room Type Distribution */}
+            <div style={{ background: "white", padding: "24px", borderRadius: "16px", border: "1px solid #E4DDD4" }}>
+              <h3 style={{ marginBottom: "20px", color: "#1E1C1A" }}>Room Type Distribution</h3>
+              <div style={{ maxWidth: "300px", margin: "0 auto" }}>
+                <Pie data={roomTypeChartData} options={{ plugins: { legend: { position: 'bottom' } } }} />
+              </div>
+            </div>
+
+            {/* Booking Status Distribution */}
+            <div style={{ background: "white", padding: "24px", borderRadius: "16px", border: "1px solid #E4DDD4" }}>
+              <h3 style={{ marginBottom: "20px", color: "#1E1C1A" }}>Booking Status</h3>
+              <div style={{ maxWidth: "300px", margin: "0 auto" }}>
+                <Pie data={bookingStatusChartData} options={{ plugins: { legend: { position: 'bottom' } } }} />
+              </div>
+            </div>
+
+            {/* Task Status Distribution */}
+            <div style={{ background: "white", padding: "24px", borderRadius: "16px", border: "1px solid #E4DDD4" }}>
+              <h3 style={{ marginBottom: "20px", color: "#1E1C1A" }}>Task Status</h3>
+              <div style={{ maxWidth: "300px", margin: "0 auto" }}>
+                <Pie data={taskStatusChartData} options={{ plugins: { legend: { position: 'bottom' } } }} />
+              </div>
+            </div>
+
+            {/* Monthly Bookings Trend */}
+            <div style={{ background: "white", padding: "24px", borderRadius: "16px", border: "1px solid #E4DDD4" }}>
+              <h3 style={{ marginBottom: "20px", color: "#1E1C1A" }}>Monthly Bookings Trend</h3>
+              <Bar 
+                data={monthlyBookingsChartData} 
+                options={{
+                  responsive: true,
+                  plugins: { legend: { display: false } },
+                  scales: { y: { beginAtZero: true, grid: { color: '#E4DDD4' } } }
+                }} 
+              />
+            </div>
+
+            {/* Revenue Trend */}
+            <div style={{ background: "white", padding: "24px", borderRadius: "16px", border: "1px solid #E4DDD4" }}>
+              <h3 style={{ marginBottom: "20px", color: "#1E1C1A" }}>Revenue Trend (₹)</h3>
+              <Line 
+                data={revenueChartData} 
+                options={{
+                  responsive: true,
+                  plugins: { legend: { position: 'top' } },
+                  scales: { y: { beginAtZero: true, grid: { color: '#E4DDD4' } } }
+                }} 
+              />
+            </div>
+          </div>
+
+          {/* Quick Actions */}
+          <div style={{ 
+            background: "linear-gradient(135deg, #4A7C72 0%, #6A9E94 100%)", 
+            padding: "32px", 
+            borderRadius: "16px", 
+            color: "white"
+          }}>
+            <h3 style={{ marginBottom: "16px", color: "white" }}>Quick Actions</h3>
+            <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+              <button 
+                onClick={() => setActiveTab("rooms")}
+                style={{
+                  background: "rgba(255,255,255,0.2)",
+                  color: "white",
+                  border: "1px solid rgba(255,255,255,0.3)",
+                  padding: "10px 20px",
+                  borderRadius: "8px",
+                  cursor: "pointer"
+                }}
+              >
+                + Add New Room
+              </button>
+              <button 
+                onClick={() => setActiveTab("users")}
+                style={{
+                  background: "rgba(255,255,255,0.2)",
+                  color: "white",
+                  border: "1px solid rgba(255,255,255,0.3)",
+                  padding: "10px 20px",
+                  borderRadius: "8px",
+                  cursor: "pointer"
+                }}
+              >
+                Manage Users
+              </button>
+              <button 
+                onClick={() => setActiveTab("config")}
+                style={{
+                  background: "rgba(255,255,255,0.2)",
+                  color: "white",
+                  border: "1px solid rgba(255,255,255,0.3)",
+                  padding: "10px 20px",
+                  borderRadius: "8px",
+                  cursor: "pointer"
+                }}
+              >
+                System Settings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Users Tab */}
       {activeTab === "users" && (
         <div>
           <h2 style={{ marginBottom: "20px" }}>Manage Users</h2>
@@ -407,7 +691,7 @@ export default function AdminDashboard() {
                   <th style={{ padding: "12px", textAlign: "left" }}>Email</th>
                   <th style={{ padding: "12px", textAlign: "left" }}>Role</th>
                   <th style={{ padding: "12px", textAlign: "left" }}>Change Role</th>
-                 </tr>
+                </tr>
               </thead>
               <tbody>
                 {users.map(user => (
@@ -453,6 +737,7 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* Rooms Tab */}
       {activeTab === "rooms" && (
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "15px" }}>
@@ -469,7 +754,6 @@ export default function AdminDashboard() {
                   floor_number: "",
                   capacity: "",
                   base_price: "",
-                  room_status: "available",
                   description: "",
                   image_url: ""
                 });
@@ -502,24 +786,6 @@ export default function AdminDashboard() {
             borderRadius: "12px",
             border: "1px solid #E4DDD4"
           }}>
-            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-              {["all", "available", "occupied", "maintenance", "reserved"].map(filter => (
-                <button
-                  key={filter}
-                  onClick={() => setRoomFilter(filter)}
-                  style={{
-                    padding: "6px 16px",
-                    borderRadius: "20px",
-                    border: "1px solid #E4DDD4",
-                    background: roomFilter === filter ? "#4A7C72" : "white",
-                    color: roomFilter === filter ? "white" : "#6B6560",
-                    cursor: "pointer"
-                  }}
-                >
-                  {filter.charAt(0).toUpperCase() + filter.slice(1)}
-                </button>
-              ))}
-            </div>
             <div>
               <input
                 type="text"
@@ -543,15 +809,6 @@ export default function AdminDashboard() {
             gap: "20px"
           }}>
             {filteredRooms.map(room => {
-              const statusColors = {
-                available: { bg: "#4A7C72", text: "Available" },
-                occupied: { bg: "#B45C5C", text: "Occupied" },
-                maintenance: { bg: "#E6B17E", text: "Maintenance" },
-                cleaning: { bg: "#6A9E94", text: "Cleaning" },
-                reserved: { bg: "#9B8E7C", text: "Reserved" }
-              };
-              const statusInfo = statusColors[room.room_status] || statusColors.available;
-              
               return (
                 <div key={room.room_id} style={{
                   background: "white",
@@ -565,19 +822,6 @@ export default function AdminDashboard() {
                     position: "relative"
                   }}>
                     {!room.image_url && <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: "48px" }}>🏨</div>}
-                    <span style={{
-                      position: "absolute",
-                      top: "12px",
-                      right: "12px",
-                      background: statusInfo.bg,
-                      padding: "4px 12px",
-                      borderRadius: "20px",
-                      fontSize: "12px",
-                      fontWeight: "bold",
-                      color: "white"
-                    }}>
-                      {statusInfo.text}
-                    </span>
                   </div>
                   
                   <div style={{ padding: "16px" }}>
@@ -606,24 +850,6 @@ export default function AdminDashboard() {
                     )}
                     
                     <div style={{ display: "flex", gap: "10px", marginTop: "12px", borderTop: "1px solid #F0EBE4", paddingTop: "12px" }}>
-                      <select
-                        value={room.room_status}
-                        onChange={(e) => updateRoomStatus(room.room_id, e.target.value)}
-                        style={{
-                          flex: 1,
-                          padding: "8px 12px",
-                          borderRadius: "8px",
-                          border: "1px solid #E4DDD4",
-                          background: "white",
-                          cursor: "pointer"
-                        }}
-                      >
-                        <option value="available">Available</option>
-                        <option value="occupied">Occupied</option>
-                        <option value="maintenance">Maintenance</option>
-                        <option value="cleaning">Cleaning</option>
-                        <option value="reserved">Reserved</option>
-                      </select>
                       <button 
                         onClick={() => {
                           setEditingRoom(room);
@@ -633,7 +859,6 @@ export default function AdminDashboard() {
                             floor_number: room.floor_number,
                             capacity: room.capacity,
                             base_price: room.base_price,
-                            room_status: room.room_status,
                             description: room.description || "",
                             image_url: room.image_url || ""
                           });
@@ -641,6 +866,7 @@ export default function AdminDashboard() {
                           setShowRoomModal(true);
                         }}
                         style={{ 
+                          flex: 1,
                           padding: "8px 16px",
                           background: "#6A9E94",
                           color: "white",
@@ -654,6 +880,7 @@ export default function AdminDashboard() {
                       <button 
                         onClick={() => deleteRoom(room.room_id)}
                         style={{ 
+                          flex: 1,
                           padding: "8px 16px",
                           background: "#B45C5C",
                           color: "white",
@@ -752,20 +979,6 @@ export default function AdminDashboard() {
                       style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #E4DDD4" }}
                     />
                   </div>
-                  <div style={{ marginBottom: "15px" }}>
-                    <label style={{ display: "block", marginBottom: "5px", fontWeight: "bold" }}>Status</label>
-                    <select
-                      value={roomForm.room_status}
-                      onChange={(e) => setRoomForm({...roomForm, room_status: e.target.value})}
-                      style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid #E4DDD4" }}
-                    >
-                      <option value="available">Available</option>
-                      <option value="occupied">Occupied</option>
-                      <option value="maintenance">Maintenance</option>
-                      <option value="cleaning">Cleaning</option>
-                      <option value="reserved">Reserved</option>
-                    </select>
-                  </div>
                   <div style={{ marginBottom: "20px" }}>
                     <label style={{ display: "block", marginBottom: "5px", fontWeight: "bold" }}>Description</label>
                     <textarea
@@ -830,6 +1043,7 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* Bookings Tab */}
       {activeTab === "bookings" && (
         <div>
           <h2 style={{ marginBottom: "20px" }}>Manage Bookings</h2>
@@ -838,8 +1052,8 @@ export default function AdminDashboard() {
               <thead>
                 <tr style={{ background: "#FDFCFB" }}>
                   <th style={{ padding: "12px" }}>ID</th>
-                  <th style={{ padding: "12px" }}>User</th>
-                  <th style={{ padding: "12px" }}>Room</th>
+                  <th style={{ padding: "12px" }}>User ID</th>
+                  <th style={{ padding: "12px" }}>Room ID</th>
                   <th style={{ padding: "12px" }}>Check In</th>
                   <th style={{ padding: "12px" }}>Check Out</th>
                   <th style={{ padding: "12px" }}>Status</th>
@@ -853,7 +1067,17 @@ export default function AdminDashboard() {
                     <td style={{ padding: "12px" }}>{booking.room_id}</td>
                     <td style={{ padding: "12px" }}>{booking.check_in_date}</td>
                     <td style={{ padding: "12px" }}>{booking.check_out_date}</td>
-                    <td style={{ padding: "12px" }}>{booking.booking_status}</td>
+                    <td style={{ padding: "12px" }}>
+                      <span style={{
+                        background: booking.booking_status === 'confirmed' ? '#D1FAE5' : '#FEF3C7',
+                        color: booking.booking_status === 'confirmed' ? '#059669' : '#D97706',
+                        padding: '4px 12px',
+                        borderRadius: '20px',
+                        fontSize: '12px'
+                      }}>
+                        {booking.booking_status}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -862,36 +1086,146 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* Tasks Tab - VIEW ONLY for Admin */}
       {activeTab === "tasks" && (
         <div>
-          <h2 style={{ marginBottom: "20px" }}>Manage Tasks</h2>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #E4DDD4" }}>
-              <thead>
-                <tr style={{ background: "#FDFCFB" }}>
-                  <th style={{ padding: "12px" }}>ID</th>
-                  <th style={{ padding: "12px" }}>Description</th>
-                  <th style={{ padding: "12px" }}>Assigned To</th>
-                  <th style={{ padding: "12px" }}>Status</th>
-                  <th style={{ padding: "12px" }}>Priority</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tasks.map(task => (
-                  <tr key={task.task_id} style={{ borderBottom: "1px solid #F0EBE4" }}>
-                    <td style={{ padding: "12px" }}>{task.task_id}</td>
-                    <td style={{ padding: "12px" }}>{task.description}</td>
-                    <td style={{ padding: "12px" }}>{task.assigned_staff_id}</td>
-                    <td style={{ padding: "12px" }}>{task.status}</td>
-                    <td style={{ padding: "12px" }}>{task.priority}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+            <h2>Service Requests & Tasks</h2>
+            <button 
+              onClick={fetchTasks}
+              style={{
+                background: "#4A7C72",
+                color: "white",
+                padding: "8px 16px",
+                border: "none",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontSize: "12px"
+              }}
+            >
+              Refresh
+            </button>
           </div>
+          
+          {loading.tasks ? (
+            <div style={{ textAlign: "center", padding: "40px" }}>Loading tasks...</div>
+          ) : tasks.length === 0 ? (
+            <div style={{ 
+              textAlign: "center", 
+              padding: "60px", 
+              background: "#FDFCFB", 
+              borderRadius: "12px",
+              border: "1px solid #E4DDD4"
+            }}>
+              <div style={{ fontSize: "48px", marginBottom: "16px" }}>📋</div>
+              <div style={{ color: "#6B6560" }}>No tasks found</div>
+              <div style={{ color: "#A09890", fontSize: "13px", marginTop: "8px" }}>
+                Tasks will appear here when customers request room service
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              {/* Task Stats Summary */}
+              <div style={{ 
+                display: "grid", 
+                gridTemplateColumns: "repeat(4, 1fr)", 
+                gap: "12px",
+                marginBottom: "8px"
+              }}>
+                {[
+                  { label: "Pending", count: tasks.filter(t => t.status === "pending").length, color: "#F59E0B" },
+                  { label: "In Progress", count: tasks.filter(t => t.status === "in_progress").length, color: "#3B82F6" },
+                  { label: "Completed", count: tasks.filter(t => t.status === "completed").length, color: "#10B981" },
+                  { label: "Total", count: tasks.length, color: "#4A7C72" }
+                ].map(stat => (
+                  <div key={stat.label} style={{
+                    background: "white",
+                    padding: "12px",
+                    borderRadius: "12px",
+                    border: "1px solid #E4DDD4",
+                    textAlign: "center"
+                  }}>
+                    <div style={{ fontSize: "24px", fontWeight: "bold", color: stat.color }}>{stat.count}</div>
+                    <div style={{ fontSize: "12px", color: "#6B6560" }}>{stat.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Tasks List - No action buttons for admin */}
+              {tasks.map(task => {
+                const statusStyle = getTaskStatusStyle(task.status);
+                const priorityStyle = getPriorityStyle(task.priority);
+                
+                return (
+                  <div key={task.task_id} style={{
+                    background: "white",
+                    borderRadius: "12px",
+                    border: "1px solid #E4DDD4",
+                    padding: "16px",
+                    transition: "all 0.2s ease"
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", marginBottom: "12px" }}>
+                          <span style={{
+                            fontFamily: "'Soria', serif",
+                            fontSize: "16px",
+                            fontWeight: "bold",
+                            color: "#1E1C1A"
+                          }}>
+                            {task.task_type?.replace(/_/g, " ") || "Service Request"}
+                          </span>
+                          <span style={{
+                            background: statusStyle.bg,
+                            color: statusStyle.color,
+                            padding: "4px 12px",
+                            borderRadius: "20px",
+                            fontSize: "11px",
+                            fontWeight: "500"
+                          }}>
+                            {statusStyle.label}
+                          </span>
+                          <span style={{
+                            background: priorityStyle.bg,
+                            color: priorityStyle.color,
+                            padding: "2px 8px",
+                            borderRadius: "12px",
+                            fontSize: "10px",
+                            fontWeight: "500"
+                          }}>
+                            {priorityStyle.label} Priority
+                          </span>
+                        </div>
+                        
+                        <p style={{ color: "#6B6560", fontSize: "13px", marginBottom: "12px", lineHeight: "1.5" }}>
+                          {task.description || "No description provided"}
+                        </p>
+                        
+                        <div style={{
+                          display: "flex",
+                          gap: "20px",
+                          fontSize: "11px",
+                          color: "#A09890",
+                          flexWrap: "wrap"
+                        }}>
+                          <span>🏠 Room #{task.room_id || "—"}</span>
+                          <span>👤 Requested by: {task.raised_by_user?.username || `User #${task.raised_by_user_id}`}</span>
+                          <span>📅 {new Date(task.created_at).toLocaleString()}</span>
+                          {task.completed_at && (
+                            <span>✅ Completed: {new Date(task.completed_at).toLocaleString()}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
+      {/* Configuration Tab */}
       {activeTab === "config" && (
         <div>
           <h2 style={{ marginBottom: "20px" }}>System Configuration</h2>
@@ -930,16 +1264,20 @@ export default function AdminDashboard() {
                 onChange={(e) => setConfig({...config, lateCheckOut: e.target.value})}
               />
               
-              <button style={{
-                background: "#4A7C72",
-                color: "white",
-                padding: "10px 24px",
-                border: "none",
-                borderRadius: "8px",
-                cursor: "pointer",
-                marginTop: "20px"
-              }}>
-                Save Configuration
+              <button 
+                onClick={saveConfigurations}
+                disabled={savingConfig}
+                style={{
+                  background: savingConfig ? "#95B6B0" : "#4A7C72",
+                  color: "white",
+                  padding: "10px 24px",
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: savingConfig ? "not-allowed" : "pointer",
+                  marginTop: "20px"
+                }}
+              >
+                {savingConfig ? "Saving..." : "Save Configuration"}
               </button>
             </div>
           </div>

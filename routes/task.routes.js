@@ -19,20 +19,20 @@ const router = express.Router();
 // All task routes require authentication
 router.use(authenticateToken);
 
-// Customer service requests
+// ============ CUSTOMER ROUTES ============
 router.post("/service-request", createServiceRequest);
 router.get("/my-requests", getUserServiceRequests);
 
-// Staff routes
+// ============ STAFF ROUTES ============
 router.get("/staff/tasks", authorizeStaff, getStaffAssignedTasks);
-router.get("/staff/:staff_id", getTasksByStaff);
+router.get("/staff/:staff_id", authorizeStaff, getTasksByStaff);
+router.patch("/:task_id/status", authorizeStaff, updateTaskStatus);  // Staff can update task status
 
-// Admin routes
+// ============ ADMIN ROUTES ============
 router.get("/", authorizeAdmin, getAllTasksWithFilters);
 router.get("/stats", authorizeAdmin, getTaskStats);
 router.post("/", authorizeAdmin, createTask);
 router.get("/room/:room_id", authorizeAdmin, getTasksByRoom);
-router.patch("/:task_id/status", authorizeAdmin, updateTaskStatus);
-router.patch("/:task_id/reassign", authorizeAdmin, reassignTask);
+router.put("/:task_id/reassign", authorizeAdmin, reassignTask);
 
 export default router;

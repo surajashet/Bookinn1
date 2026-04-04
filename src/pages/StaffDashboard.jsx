@@ -1,7 +1,7 @@
 // FILE: src/pages/StaffDashboard.jsx
 import { useState, useEffect, useRef } from "react";
 
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001"; // Changed to 3001
+const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 const authFetch = (p, o = {}) =>
   fetch(`${BASE_URL}${p}`, {
     ...o,
@@ -52,12 +52,56 @@ const TASK_TYPE_ICON = {
 
 const FILTERS = ["All", "pending", "in_progress", "completed"];
 
-// ─── Task Card Component ──────────────────────────────────────────────────────
-function TaskCard({ task, onComplete, completing }) {
+// ─── Task Card Component with Full Status Controls ───────────────────────────
+function TaskCard({ task, onStart, onComplete, onCancel, starting, completing, cancelling }) {
   const [expanded, setExpanded] = useState(false);
   const icon = TASK_TYPE_ICON[task.task_type] || "fa-regular fa-message";
   const pri  = PRIORITY_STYLE[task.priority?.toLowerCase()] || PRIORITY_STYLE.normal;
   const isOverdue = task.status !== "completed" && new Date(task.created_at) < new Date(Date.now() - 3600000);
+
+  const getActionButtons = () => {
+    switch (task.status) {
+      case "pending":
+        return (
+          <button 
+            onClick={() => onStart(task.task_id)} 
+            disabled={starting === task.task_id}
+            style={{ padding: "7px 16px", background: "#3B82F6", color: "#fff", border: "none", borderRadius: 10, fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, opacity: starting === task.task_id ? 0.6 : 1, whiteSpace: "nowrap" }}>
+            {starting === task.task_id
+              ? <span style={{ width: 13, height: 13, border: "2px solid rgba(255,255,255,.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "bkSpin .7s linear infinite", display: "inline-block" }} />
+              : <><i className="fa-solid fa-play" />Start Task</>
+            }
+          </button>
+        );
+      case "in_progress":
+        return (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button 
+              onClick={() => onComplete(task.task_id)} 
+              disabled={completing === task.task_id}
+              style={{ padding: "7px 16px", background: "#10B981", color: "#fff", border: "none", borderRadius: 10, fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, opacity: completing === task.task_id ? 0.6 : 1, whiteSpace: "nowrap" }}>
+              {completing === task.task_id
+                ? <span style={{ width: 13, height: 13, border: "2px solid rgba(255,255,255,.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "bkSpin .7s linear infinite", display: "inline-block" }} />
+                : <><i className="fa-solid fa-check" />Complete</>
+              }
+            </button>
+            <button 
+              onClick={() => onCancel(task.task_id)} 
+              disabled={cancelling === task.task_id}
+              style={{ padding: "7px 16px", background: "#EF4444", color: "#fff", border: "none", borderRadius: 10, fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, opacity: cancelling === task.task_id ? 0.6 : 1, whiteSpace: "nowrap" }}>
+              {cancelling === task.task_id
+                ? <span style={{ width: 13, height: 13, border: "2px solid rgba(255,255,255,.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "bkSpin .7s linear infinite", display: "inline-block" }} />
+                : <><i className="fa-solid fa-ban" />Cancel</>
+              }
+            </button>
+          </div>
+        );
+      case "completed":
+        return null;
+      default:
+        return null;
+    }
+  };
 
   return (
     <div style={{ background: "#fff", borderRadius: 12, border: `1px solid ${task.status === "completed" ? "#D6E3DF" : isOverdue ? "rgba(180,92,92,.3)" : "#D6E3DF"}`, overflow: "hidden", transition: "box-shadow .2s", opacity: task.status === "completed" ? 0.72 : 1 }}>
@@ -98,15 +142,7 @@ function TaskCard({ task, onComplete, completing }) {
           <button onClick={() => setExpanded(e => !e)} style={{ padding: "6px 12px", background: "transparent", border: "1px solid #D6E3DF", borderRadius: 10, fontSize: 12, color: "#6B6560", cursor: "pointer", fontFamily: "inherit" }}>
             {expanded ? "Less" : "More"}
           </button>
-          {task.status !== "completed" && (
-            <button onClick={() => onComplete(task.task_id)} disabled={completing === task.task_id}
-              style={{ padding: "7px 16px", background: "#1E1C1A", color: "#4A7C72", border: "none", borderRadius: 10, fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, opacity: completing === task.task_id ? 0.6 : 1, whiteSpace: "nowrap" }}>
-              {completing === task.task_id
-                ? <span style={{ width: 13, height: 13, border: "2px solid rgba(74,124,114,.3)", borderTopColor: "#4A7C72", borderRadius: "50%", animation: "bkSpin .7s linear infinite", display: "inline-block" }} />
-                : <><i className="fa-solid fa-check" />Mark Done</>
-              }
-            </button>
-          )}
+          {getActionButtons()}
         </div>
       </div>
 
@@ -155,7 +191,9 @@ const StatusPill = ({ status }) => {
 export default function StaffDashboard() {
   const [tasks, setTasks]       = useState([]);
   const [loading, setLoading]   = useState(true);
+  const [starting, setStarting] = useState(null);
   const [completing, setCompleting] = useState(null);
+  const [cancelling, setCancelling] = useState(null);
   const [filter, setFilter]     = useState("All");
   const [sortBy, setSortBy]     = useState("priority");
   const [error, setError]       = useState(null);
@@ -171,14 +209,12 @@ export default function StaffDashboard() {
   useEffect(() => {
     const userData = JSON.parse(localStorage.getItem("user") || "{}");
     setUser(userData);
-    
     fetchTasks();
   }, []);
 
   const fetchTasks = async () => {
     try {
       const data = await authFetch("/api/tasks/staff/tasks");
-      // Transform to match component expectations
       const transformedTasks = (data.data?.active_tasks || []).map(task => ({
         ...task,
         task_type: task.task_type,
@@ -198,19 +234,46 @@ export default function StaffDashboard() {
     }
   };
 
-  const markComplete = async id => {
-    setCompleting(id);
+  const updateTaskStatus = async (taskId, newStatus, successMessage) => {
     try {
-      await authFetch(`/api/tasks/${id}/status`, { 
+      await authFetch(`/api/tasks/${taskId}/status`, { 
         method: "PATCH",
-        body: JSON.stringify({ status: "completed" })
+        body: JSON.stringify({ status: newStatus })
       });
-      setTasks(prev => prev.map(t => t.task_id === id ? { ...t, status: "completed" } : t));
-      showToast("success", "Task marked as completed.");
+      setTasks(prev => prev.map(t => t.task_id === taskId ? { ...t, status: newStatus } : t));
+      showToast("success", successMessage);
     } catch (err) {
-      showToast("error", "Failed to update task.");
+      showToast("error", `Failed to ${newStatus.replace("_", " ")} task.`);
+      throw err;
+    }
+  };
+
+  const handleStart = async (taskId) => {
+    setStarting(taskId);
+    try {
+      await updateTaskStatus(taskId, "in_progress", "Task started! 🚀");
+    } finally {
+      setStarting(null);
+    }
+  };
+
+  const handleComplete = async (taskId) => {
+    setCompleting(taskId);
+    try {
+      await updateTaskStatus(taskId, "completed", "Task completed successfully! 🎉");
     } finally {
       setCompleting(null);
+    }
+  };
+
+  const handleCancel = async (taskId) => {
+    if (window.confirm("Are you sure you want to cancel this task?")) {
+      setCancelling(taskId);
+      try {
+        await updateTaskStatus(taskId, "cancelled", "Task cancelled");
+      } finally {
+        setCancelling(null);
+      }
     }
   };
 
@@ -352,7 +415,15 @@ export default function StaffDashboard() {
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {visible.map(task => (
                 <div key={task.task_id} className="staff-task-card" style={{ transition: "box-shadow .2s" }}>
-                  <TaskCard task={task} onComplete={markComplete} completing={completing} />
+                  <TaskCard 
+                    task={task} 
+                    onStart={handleStart}
+                    onComplete={handleComplete}
+                    onCancel={handleCancel}
+                    starting={starting}
+                    completing={completing}
+                    cancelling={cancelling}
+                  />
                 </div>
               ))}
             </div>

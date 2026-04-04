@@ -1,6 +1,6 @@
 import supabase from "../config/supabaseClient.js";
 
-// Create room
+// Create room (without room_status)
 export const createRoom = async (req, res) => {
   try {
     const {
@@ -9,7 +9,6 @@ export const createRoom = async (req, res) => {
       floor_number,
       capacity,
       base_price,
-      room_status = 'available',
       description,
       image_url
     } = req.body;
@@ -36,7 +35,6 @@ export const createRoom = async (req, res) => {
         floor_number,
         capacity,
         base_price,
-        room_status,
         description,
         image_url
       }])
@@ -58,11 +56,10 @@ export const createRoom = async (req, res) => {
   }
 };
 
-// Get all rooms with optional filters
+// Get all rooms with optional filters (without room_status filter)
 export const getRooms = async (req, res) => {
   try {
     const { 
-      status, 
       room_type, 
       min_price, 
       max_price,
@@ -74,9 +71,6 @@ export const getRooms = async (req, res) => {
       .from("rooms")
       .select("*");
 
-    if (status) {
-      query = query.eq("room_status", status);
-    }
     if (room_type) {
       query = query.eq("room_type", room_type);
     }
@@ -161,59 +155,7 @@ export const getRoomById = async (req, res) => {
   }
 };
 
-// Update room status
-export const updateRoomStatus = async (req, res) => {
-  try {
-    const { room_id } = req.params;
-    const { room_status } = req.body;
-
-    const validStatuses = ['available', 'occupied', 'maintenance', 'cleaning', 'reserved'];
-    if (!validStatuses.includes(room_status)) {
-      return res.status(400).json({ 
-        success: false,
-        error: "Invalid room status. Must be one of: " + validStatuses.join(', ')
-      });
-    }
-
-    const { data: currentRoom, error: fetchError } = await supabase
-      .from("rooms")
-      .select("room_status")
-      .eq("room_id", room_id)
-      .maybeSingle();
-
-    if (fetchError || !currentRoom) {
-      return res.status(404).json({ 
-        success: false,
-        error: "Room not found" 
-      });
-    }
-
-    const { data, error } = await supabase
-      .from("rooms")
-      .update({ 
-        room_status,
-        updated_at: new Date().toISOString()
-      })
-      .eq("room_id", room_id)
-      .select();
-
-    if (error) throw error;
-
-    res.json({
-      success: true,
-      message: "Room status updated successfully",
-      data: data[0]
-    });
-  } catch (error) {
-    console.error("Update room status error:", error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message 
-    });
-  }
-};
-
-// Update room details (full update)
+// Update room details (without room_status)
 export const updateRoom = async (req, res) => {
   try {
     const { room_id } = req.params;
@@ -223,7 +165,6 @@ export const updateRoom = async (req, res) => {
       floor_number,
       capacity,
       base_price,
-      room_status,
       description,
       image_url
     } = req.body;
@@ -263,7 +204,6 @@ export const updateRoom = async (req, res) => {
     if (floor_number !== undefined) updates.floor_number = floor_number;
     if (capacity !== undefined) updates.capacity = capacity;
     if (base_price !== undefined) updates.base_price = base_price;
-    if (room_status !== undefined) updates.room_status = room_status;
     if (description !== undefined) updates.description = description;
     if (image_url !== undefined) updates.image_url = image_url;
     updates.updated_at = new Date().toISOString();
@@ -431,7 +371,7 @@ export const forceDeleteRoom = async (req, res) => {
   }
 };
 
-// Check room availability for specific dates
+// Check room availability for specific dates (without room_status)
 export const checkRoomAvailability = async (req, res) => {
   try {
     const { room_id } = req.params;
@@ -446,7 +386,7 @@ export const checkRoomAvailability = async (req, res) => {
 
     const { data: room, error: roomError } = await supabase
       .from("rooms")
-      .select("room_status")
+      .select("*")
       .eq("room_id", room_id)
       .maybeSingle();
 
@@ -454,17 +394,6 @@ export const checkRoomAvailability = async (req, res) => {
       return res.status(404).json({ 
         success: false,
         error: "Room not found" 
-      });
-    }
-
-    if (room.room_status === 'maintenance' || room.room_status === 'cleaning') {
-      return res.json({
-        success: true,
-        room_id,
-        check_in,
-        check_out,
-        available: false,
-        reason: `Room is currently in ${room.room_status} status`
       });
     }
 
@@ -486,7 +415,13 @@ export const checkRoomAvailability = async (req, res) => {
       check_in,
       check_out,
       available: isAvailable,
-      ...(!isAvailable && { reason: "Room is already booked for these dates" })
+      room_details: {
+        room_number: room.room_number,
+        room_type: room.room_type,
+        base_price: room.base_price,
+        capacity: room.capacity,
+        image_url: room.image_url
+      }
     });
   } catch (error) {
     console.error("Check availability error:", error);
@@ -497,7 +432,7 @@ export const checkRoomAvailability = async (req, res) => {
   }
 };
 
-// Get room statistics
+// Get room statistics (without room_status)
 export const getRoomStats = async (req, res) => {
   try {
     const { data: allRooms, error: roomsError } = await supabase
@@ -507,17 +442,11 @@ export const getRoomStats = async (req, res) => {
     if (roomsError) throw roomsError;
 
     const totalRooms = allRooms.length;
-    const availableRooms = allRooms.filter(r => r.room_status === 'available').length;
-    const occupiedRooms = allRooms.filter(r => r.room_status === 'occupied').length;
-    const maintenanceRooms = allRooms.filter(r => r.room_status === 'maintenance').length;
-    const cleaningRooms = allRooms.filter(r => r.room_status === 'cleaning').length;
-    const reservedRooms = allRooms.filter(r => r.room_status === 'reserved').length;
     
+    // Calculate average price
     const averagePrice = totalRooms > 0 ? allRooms.reduce((sum, r) => sum + r.base_price, 0) / totalRooms : 0;
-    const dailyRevenue = allRooms
-      .filter(r => r.room_status === 'occupied')
-      .reduce((sum, r) => sum + r.base_price, 0);
 
+    // Get room type breakdown
     const typeBreakdown = {};
     allRooms.forEach(room => {
       if (!typeBreakdown[room.room_type]) {
@@ -541,13 +470,7 @@ export const getRoomStats = async (req, res) => {
       data: {
         overview: {
           total_rooms: totalRooms,
-          available_rooms: availableRooms,
-          occupied_rooms: occupiedRooms,
-          maintenance_rooms: maintenanceRooms,
-          cleaning_rooms: cleaningRooms,
-          reserved_rooms: reservedRooms,
-          average_price: Number(averagePrice.toFixed(2)),
-          daily_revenue: dailyRevenue
+          average_price: Number(averagePrice.toFixed(2))
         },
         by_type: typeBreakdown
       }
@@ -561,76 +484,73 @@ export const getRoomStats = async (req, res) => {
   }
 };
 
-// Bulk update room status
-export const bulkUpdateRoomStatus = async (req, res) => {
-  try {
-    const { room_ids, room_status, floor_number } = req.body;
-
-    if (!room_status) {
-      return res.status(400).json({ 
-        success: false,
-        error: "Room status is required" 
-      });
-    }
-
-    let query = supabase
-      .from("rooms")
-      .update({ 
-        room_status,
-        updated_at: new Date().toISOString()
-      });
-
-    if (room_ids && room_ids.length > 0) {
-      query = query.in("room_id", room_ids);
-    } else if (floor_number !== undefined) {
-      query = query.eq("floor_number", floor_number);
-    } else {
-      return res.status(400).json({ 
-        success: false,
-        error: "Either room_ids or floor_number is required" 
-      });
-    }
-
-    const { data, error } = await query.select();
-
-    if (error) throw error;
-
-    res.json({
-      success: true,
-      message: `Updated ${data.length} rooms`,
-      data: data
-    });
-  } catch (error) {
-    console.error("Bulk update error:", error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message 
-    });
-  }
-};
-
-// Get rooms for client (with image_url)
+// Get rooms for client (with calculated status from bookings)
 export const getClientRooms = async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const { check_in, check_out } = req.query;
+    const today = new Date().toISOString().split('T')[0];
+    
+    const { data: rooms, error } = await supabase
       .from("rooms")
       .select("*")
       .order("room_number");
 
     if (error) throw error;
 
-    const transformedRooms = data.map(room => ({
-      id: room.room_id,
-      name: `Room ${room.room_number}`,
-      type: room.room_type,
-      price: room.base_price,
-      capacity: room.capacity,
-      status: room.room_status === 'available' ? 'Available' : 'Booked',
-      description: room.description,
-      size: `${room.capacity} guests`,
-      floor: room.floor_number,
-      image_url: room.image_url || null
-    }));
+    // Get all active bookings
+    const { data: activeBookings, error: bookingError } = await supabase
+      .from("bookings")
+      .select("room_id, booking_status, check_in_date, check_out_date")
+      .in("booking_status", ["confirmed", "checked_in"]);
+
+    if (bookingError) throw bookingError;
+
+    const transformedRooms = rooms.map(room => {
+      const roomBookings = activeBookings?.filter(b => b.room_id === room.room_id) || [];
+      
+      // Calculate status based on bookings
+      const isOccupiedToday = roomBookings.some(b => 
+        b.booking_status === 'checked_in' ||
+        (b.check_in_date <= today && b.check_out_date >= today)
+      );
+      
+      const hasFutureBooking = roomBookings.some(b => 
+        b.booking_status === 'confirmed' && b.check_in_date > today
+      );
+      
+      let displayStatus;
+      if (isOccupiedToday) {
+        displayStatus = 'Occupied';
+      } else if (hasFutureBooking) {
+        displayStatus = 'Reserved';
+      } else {
+        displayStatus = 'Available';
+      }
+      
+      // Check availability for specific dates if provided
+      let isAvailableForDates = true;
+      if (check_in && check_out) {
+        const hasConflicting = roomBookings.some(b => 
+          b.check_in_date <= check_out && b.check_out_date >= check_in
+        );
+        isAvailableForDates = !hasConflicting;
+      }
+
+      return {
+        id: room.room_id,
+        name: `Room ${room.room_number}`,
+        room_number: room.room_number,
+        type: room.room_type,
+        price: room.base_price,
+        capacity: room.capacity,
+        status: displayStatus,
+        is_available: isAvailableForDates,
+        description: room.description,
+        size: `${room.capacity} guests`,
+        floor: room.floor_number,
+        image_url: room.image_url || null
+      };
+    });
 
     res.json(transformedRooms);
   } catch (error) {

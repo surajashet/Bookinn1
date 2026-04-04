@@ -8,8 +8,10 @@ import ClientDashboard from './pages/ClientDashboard';
 import ClientRooms from './pages/ClientRooms';
 import ClientBooking from './pages/ClientBooking';
 import ClientBookings from './pages/ClientBookings';
+import BookingInvoice from './pages/BookingInvoice';  // ← ADD THIS
 import AdminDashboard from './pages/admin/AdminDashboard';
 import StaffDashboard from './pages/StaffDashboard';
+import BookinnChatbot from './components/BookinnChatbot';
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const token = localStorage.getItem('token');
@@ -23,7 +25,15 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
     return <Navigate to="/login" />;
   }
   
-  return children;
+  // Only show chatbot for customer routes and pass userId for personalization
+  const showChatbot = allowedRoles?.includes('customer') && user.role === 'customer';
+  
+  return (
+    <>
+      {children}
+      {showChatbot && <BookinnChatbot userId={user.user_id} />}
+    </>
+  );
 };
 
 function App() {
@@ -91,6 +101,16 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['customer']}>
               <ClientBookings />
+            </ProtectedRoute>
+          } 
+        />
+        
+        {/* Invoice Route - ADD THIS */}
+        <Route 
+          path="/client/invoice/:id" 
+          element={
+            <ProtectedRoute allowedRoles={['customer']}>
+              <BookingInvoice />
             </ProtectedRoute>
           } 
         />

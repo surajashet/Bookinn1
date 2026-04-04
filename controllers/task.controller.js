@@ -56,12 +56,7 @@ export const createTask = async (req, res) => {
           status: "pending"
         }
       ])
-      .select(`
-        *,
-        rooms (*),
-        Users!Tasks_raised_by_user_id_fkey (user_id, username),
-        Users!Tasks_assigned_staff_id_fkey (user_id, username)
-      `);
+      .select();
 
     if (error) {
       console.log(error);
@@ -95,40 +90,116 @@ export const createServiceRequest = async (req, res) => {
   try {
     const { room_id, task_type, description, priority } = req.body;
     const raised_by_user_id = req.user.id;
-
-    // Check if the user has an active booking for this room
     const today = new Date().toISOString().split('T')[0];
-    const { data: booking, error: bookingError } = await supabase
-      .from("bookings")
-      .select("booking_id, booking_status")
+
+    console.log("========== ROOM SERVICE REQUEST DEBUG ==========");
+    console.log("1. Request body:", { room_id, task_type, description, priority });
+    console.log("2. User ID from token:", raised_by_user_id);
+    console.log("3. Today's date:", today);
+
+    // Check if user exists
+    const { data: user, error: userError } = await supabase
+      .from("Users")
+      .select("user_id, username, email")
       .eq("user_id", raised_by_user_id)
-      .eq("room_id", room_id)
-      .in("booking_status", ["confirmed", "checked_in"])
-      .gte("check_out_date", today)
       .maybeSingle();
 
-    if (bookingError || !booking) {
+    if (userError || !user) {
+      console.log("❌ User not found:", raised_by_user_id);
       return res.status(403).json({
         success: false,
-        error: "You can only request services for rooms you have an active booking for"
+        error: "User not found. Please login again."
+      });
+    }
+    console.log("✅ User found:", user.username);
+
+    // FIRST: Check if user has ANY booking for this room (without date restrictions first)
+    console.log("🔍 Checking for booking - room_id:", room_id, "user_id:", raised_by_user_id);
+    
+    const { data: anyBooking, error: anyBookingError } = await supabase
+      .from("bookings")
+      .select("booking_id, booking_status, check_in_date, check_out_date")
+      .eq("user_id", raised_by_user_id)
+      .eq("room_id", room_id)
+      .maybeSingle();
+
+    if (anyBookingError) {
+      console.log("❌ Booking query error:", anyBookingError);
+    }
+
+    if (!anyBooking) {
+      console.log("❌ No booking found for this user and room");
+      return res.status(403).json({
+        success: false,
+        error: "No booking found for this room. Please make sure you have a confirmed booking."
       });
     }
 
-    // Get all available staff
-    const { data: staff, error: staffError } = await supabase
-      .from("Users")
-      .select("user_id")
-      .eq("role", "staff")
-      .eq("availability", "available");
+    console.log("📅 Booking found:", {
+      id: anyBooking.booking_id,
+      status: anyBooking.booking_status,
+      check_in: anyBooking.check_in_date,
+      check_out: anyBooking.check_out_date
+    });
 
-    if (staffError || !staff || staff.length === 0) {
+    // Check if booking is active (not cancelled)
+    if (anyBooking.booking_status === 'cancelled') {
+      console.log("❌ Booking is cancelled");
+      return res.status(403).json({
+        success: false,
+        error: "This booking has been cancelled. Room service is not available."
+      });
+    }
+
+    // Check if within stay dates (flexible - allow confirmed bookings too)
+    const isWithinDates = anyBooking.check_in_date <= today && anyBooking.check_out_date >= today;
+    const isConfirmed = anyBooking.booking_status === 'confirmed';
+    const isCheckedIn = anyBooking.booking_status === 'checked_in';
+    
+    console.log("📅 Date check:", {
+      check_in: anyBooking.check_in_date,
+      check_out: anyBooking.check_out_date,
+      today: today,
+      isWithinDates: isWithinDates,
+      isConfirmed: isConfirmed,
+      isCheckedIn: isCheckedIn
+    });
+
+    // Allow if either: within dates OR confirmed (for future bookings they can pre-order)
+    if (!isWithinDates && !isConfirmed) {
+      console.log("❌ Not eligible for room service");
+      return res.status(403).json({
+        success: false,
+        error: `Room service is only available during your stay (${anyBooking.check_in_date} to ${anyBooking.check_out_date}).`
+      });
+    }
+
+    // Get staff (try without availability filter first)
+    console.log("🔍 Fetching staff...");
+    let { data: staff, error: staffError } = await supabase
+      .from("Users")
+      .select("user_id, username")
+      .eq("role", "staff");
+
+    if (staffError) {
+      console.log("❌ Staff fetch error:", staffError);
+      return res.status(500).json({ 
+        success: false,
+        error: "Error fetching staff" 
+      });
+    }
+
+    console.log("👥 Staff found:", staff?.length || 0);
+
+    if (!staff || staff.length === 0) {
+      console.log("❌ No staff in database");
       return res.status(400).json({ 
         success: false,
-        error: "No staff available at the moment" 
+        error: "No staff available. Please contact front desk." 
       });
     }
 
-    // Get current task counts for workload balancing
+    // Get task counts for workload balancing
     const { data: tasks } = await supabase
       .from("Tasks")
       .select("assigned_staff_id")
@@ -142,31 +213,55 @@ export const createServiceRequest = async (req, res) => {
       }
     });
 
-    // Find least busy staff
-    let assigned_staff_id = Object.keys(staffWorkload).reduce((a, b) =>
-      staffWorkload[a] < staffWorkload[b] ? a : b
-    );
+    console.log("📊 Staff workload:", staffWorkload);
+
+    // Find least busy staff (or pick first if all have same workload)
+    let assigned_staff_id;
+    if (Object.keys(staffWorkload).length > 0) {
+      assigned_staff_id = Object.keys(staffWorkload).reduce((a, b) =>
+        staffWorkload[a] < staffWorkload[b] ? a : b
+      );
+    } else {
+      assigned_staff_id = staff[0].user_id;
+    }
+
+    console.log("✅ Assigned to staff ID:", assigned_staff_id);
 
     // Create task
+    console.log("📝 Creating task...");
     const { data, error } = await supabase
       .from("Tasks")
       .insert([{
-        room_id,
-        raised_by_user_id,
-        assigned_staff_id,
+        room_id: parseInt(room_id),
+        raised_by_user_id: parseInt(raised_by_user_id),
+        assigned_staff_id: parseInt(assigned_staff_id),
         task_type,
-        description,
+        description: description || `Room service request: ${task_type}`,
         priority: priority || 'normal',
-        status: 'pending'
+        status: 'pending',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       }])
-      .select(`
-        *,
-        rooms (*),
-        Users!Tasks_raised_by_user_id_fkey (user_id, username, email),
-        Users!Tasks_assigned_staff_id_fkey (user_id, username)
-      `);
+      .select();
 
-    if (error) throw error;
+    if (error) {
+      console.log("❌ Task creation error:", error);
+      return res.status(500).json({ 
+        success: false,
+        error: error.message 
+      });
+    }
+
+    if (!data || data.length === 0) {
+      console.log("❌ No data returned from task creation");
+      return res.status(500).json({ 
+        success: false,
+        error: "Failed to create task" 
+      });
+    }
+
+    console.log("✅ Task created successfully! Task ID:", data[0].task_id);
+    console.log("========== REQUEST COMPLETE ==========");
 
     // Log activity
     await supabase
@@ -184,7 +279,7 @@ export const createServiceRequest = async (req, res) => {
       data: data[0]
     });
   } catch (error) {
-    console.error("Create service request error:", error);
+    console.error("❌ Create service request error:", error);
     res.status(500).json({ 
       success: false,
       error: error.message 
@@ -201,17 +296,33 @@ export const getUserServiceRequests = async (req, res) => {
       .from("Tasks")
       .select(`
         *,
-        rooms (room_number, room_type),
-        Users!Tasks_assigned_staff_id_fkey (username)
+        rooms:room_id (room_number, room_type)
       `)
       .eq("raised_by_user_id", user_id)
       .order("created_at", { ascending: false });
 
     if (error) throw error;
 
+    // Get assigned staff names separately
+    const staffIds = [...new Set(data?.map(t => t.assigned_staff_id).filter(id => id) || [])];
+    let staffMap = {};
+    
+    if (staffIds.length > 0) {
+      const { data: staff } = await supabase
+        .from("Users")
+        .select("user_id, username")
+        .in("user_id", staffIds);
+      staff.forEach(s => { staffMap[s.user_id] = s.username; });
+    }
+
+    const enrichedData = data?.map(task => ({
+      ...task,
+      assigned_staff_name: staffMap[task.assigned_staff_id] || null
+    })) || [];
+
     res.json({
       success: true,
-      data: data
+      data: enrichedData
     });
   } catch (error) {
     console.error("Get user service requests error:", error);
@@ -232,8 +343,7 @@ export const getStaffAssignedTasks = async (req, res) => {
       .from("Tasks")
       .select(`
         *,
-        rooms (room_number, room_type),
-        Users!Tasks_raised_by_user_id_fkey (user_id, username, email)
+        rooms:room_id (room_number, room_type)
       `)
       .eq("assigned_staff_id", staff_id)
       .in("status", ["pending", "in_progress"])
@@ -241,13 +351,30 @@ export const getStaffAssignedTasks = async (req, res) => {
 
     if (tasksError) throw tasksError;
 
+    // Get raised by user names
+    const userIds = [...new Set(activeTasks?.map(t => t.raised_by_user_id).filter(id => id) || [])];
+    let userMap = {};
+    
+    if (userIds.length > 0) {
+      const { data: users } = await supabase
+        .from("Users")
+        .select("user_id, username, email")
+        .in("user_id", userIds);
+      users.forEach(u => { userMap[u.user_id] = u; });
+    }
+
+    const enrichedTasks = activeTasks?.map(task => ({
+      ...task,
+      raised_by_user: userMap[task.raised_by_user_id] || null
+    })) || [];
+
     // Get today's check-ins
     const today = new Date().toISOString().split('T')[0];
     const { data: checkIns, error: checkInError } = await supabase
       .from("bookings")
       .select(`
         *,
-        rooms (room_number, room_type),
+        rooms:room_id (room_number, room_type),
         Users (username, email)
       `)
       .eq("check_in_date", today)
@@ -259,7 +386,7 @@ export const getStaffAssignedTasks = async (req, res) => {
     res.json({
       success: true,
       data: {
-        active_tasks: activeTasks || [],
+        active_tasks: enrichedTasks || [],
         today_check_ins: checkIns || []
       }
     });
@@ -272,46 +399,78 @@ export const getStaffAssignedTasks = async (req, res) => {
   }
 };
 
-// Get all tasks with filters (admin)
+// Get all tasks with filters (admin) - FIXED VERSION
 export const getAllTasksWithFilters = async (req, res) => {
   try {
     const { status, priority, task_type, staff_id, room_id } = req.query;
 
+    console.log("📋 Fetching all tasks - Admin request");
+
+    // Build query for tasks only (no nested user joins to avoid duplication)
     let query = supabase
       .from("Tasks")
       .select(`
         *,
-        rooms (room_number, room_type, floor_number),
-        Users!Tasks_raised_by_user_id_fkey (user_id, username),
-        Users!Tasks_assigned_staff_id_fkey (user_id, username)
+        rooms:room_id (room_number, room_type, floor_number)
       `);
 
-    if (status) {
-      query = query.eq("status", status);
-    }
-    if (priority) {
-      query = query.eq("priority", priority);
-    }
-    if (task_type) {
-      query = query.eq("task_type", task_type);
-    }
-    if (staff_id) {
-      query = query.eq("assigned_staff_id", staff_id);
-    }
-    if (room_id) {
-      query = query.eq("room_id", room_id);
-    }
+    if (status) query = query.eq("status", status);
+    if (priority) query = query.eq("priority", priority);
+    if (task_type) query = query.eq("task_type", task_type);
+    if (staff_id) query = query.eq("assigned_staff_id", staff_id);
+    if (room_id) query = query.eq("room_id", room_id);
 
     query = query.order("created_at", { ascending: false });
 
-    const { data, error } = await query;
+    const { data: tasks, error } = await query;
 
-    if (error) throw error;
+    if (error) {
+      console.error("❌ Tasks fetch error:", error);
+      throw error;
+    }
+
+    if (!tasks || tasks.length === 0) {
+      return res.json({ success: true, count: 0, data: [] });
+    }
+
+    // Get unique user IDs from tasks
+    const raisedByUserIds = [...new Set(tasks.map(t => t.raised_by_user_id).filter(id => id))];
+    const assignedStaffIds = [...new Set(tasks.map(t => t.assigned_staff_id).filter(id => id))];
+    const allUserIds = [...new Set([...raisedByUserIds, ...assignedStaffIds])];
+
+    // Fetch users separately
+    let raisedByUsers = [];
+    let assignedStaff = [];
+    
+    if (raisedByUserIds.length > 0) {
+      const { data: users } = await supabase
+        .from("Users")
+        .select("user_id, username, email")
+        .in("user_id", raisedByUserIds);
+      raisedByUsers = users || [];
+    }
+
+    if (assignedStaffIds.length > 0) {
+      const { data: staff } = await supabase
+        .from("Users")
+        .select("user_id, username, email")
+        .in("user_id", assignedStaffIds);
+      assignedStaff = staff || [];
+    }
+
+    // Map users to tasks
+    const enrichedTasks = tasks.map(task => ({
+      ...task,
+      raised_by_user: raisedByUsers.find(u => u.user_id === task.raised_by_user_id),
+      assigned_staff: assignedStaff.find(u => u.user_id === task.assigned_staff_id)
+    }));
+
+    console.log(`✅ Found ${enrichedTasks.length} tasks`);
 
     res.json({
       success: true,
-      count: data.length,
-      data
+      count: enrichedTasks.length,
+      data: enrichedTasks
     });
   } catch (error) {
     console.error("Get all tasks error:", error);
@@ -335,32 +494,44 @@ export const getTasksByStaff = async (req, res) => {
       .from("Tasks")
       .select(`
         *,
-        rooms (room_number, room_type, floor_number),
-        Users!Tasks_raised_by_user_id_fkey (username)
+        rooms:room_id (room_number, room_type, floor_number)
       `)
       .eq("assigned_staff_id", staff_id);
 
-    if (status) {
-      query = query.eq("status", status);
-    }
-    if (priority) {
-      query = query.eq("priority", priority);
-    }
+    if (status) query = query.eq("status", status);
+    if (priority) query = query.eq("priority", priority);
 
     query = query.order("created_at", { ascending: false });
 
-    const { data, error } = await query;
+    const { data: tasks, error } = await query;
 
     if (error) {
       console.log(error);
       return res.status(500).json(error);
     }
 
+    // Get raised by user names
+    const userIds = [...new Set(tasks?.map(t => t.raised_by_user_id).filter(id => id) || [])];
+    let userMap = {};
+    
+    if (userIds.length > 0) {
+      const { data: users } = await supabase
+        .from("Users")
+        .select("user_id, username")
+        .in("user_id", userIds);
+      users.forEach(u => { userMap[u.user_id] = u.username; });
+    }
+
+    const enrichedTasks = tasks?.map(task => ({
+      ...task,
+      raised_by_username: userMap[task.raised_by_user_id] || null
+    })) || [];
+
     return res.status(200).json({
       success: true,
       message: "Staff tasks fetched successfully",
-      count: data.length,
-      data
+      count: enrichedTasks.length,
+      data: enrichedTasks
     });
 
   } catch (err) {
@@ -376,22 +547,39 @@ export const getTasksByRoom = async (req, res) => {
   try {
     const { room_id } = req.params;
 
-    const { data, error } = await supabase
+    const { data: tasks, error } = await supabase
       .from("Tasks")
-      .select(`
-        *,
-        Users!Tasks_raised_by_user_id_fkey (username),
-        Users!Tasks_assigned_staff_id_fkey (username)
-      `)
+      .select("*")
       .eq("room_id", room_id)
       .order("created_at", { ascending: false });
 
     if (error) throw error;
 
+    // Get user details separately
+    const userIds = [...new Set([
+      ...tasks?.map(t => t.raised_by_user_id),
+      ...tasks?.map(t => t.assigned_staff_id)
+    ].filter(id => id) || [])];
+    
+    let userMap = {};
+    if (userIds.length > 0) {
+      const { data: users } = await supabase
+        .from("Users")
+        .select("user_id, username")
+        .in("user_id", userIds);
+      users.forEach(u => { userMap[u.user_id] = u.username; });
+    }
+
+    const enrichedTasks = tasks?.map(task => ({
+      ...task,
+      raised_by_username: userMap[task.raised_by_user_id],
+      assigned_staff_username: userMap[task.assigned_staff_id]
+    })) || [];
+
     res.json({
       success: true,
-      count: data.length,
-      data
+      count: enrichedTasks.length,
+      data: enrichedTasks
     });
   } catch (error) {
     console.error("Get tasks by room error:", error);
@@ -447,10 +635,7 @@ export const getTaskStats = async (req, res) => {
   try {
     const { data: allTasks, error } = await supabase
       .from("Tasks")
-      .select(`
-        *,
-        Users!Tasks_assigned_staff_id_fkey (username)
-      `);
+      .select("*");
 
     if (error) throw error;
 
@@ -464,7 +649,8 @@ export const getTaskStats = async (req, res) => {
       by_priority: {
         high: allTasks.filter(t => t.priority === 'high').length,
         medium: allTasks.filter(t => t.priority === 'medium').length,
-        low: allTasks.filter(t => t.priority === 'low').length
+        low: allTasks.filter(t => t.priority === 'low').length,
+        normal: allTasks.filter(t => t.priority === 'normal').length
       },
       by_type: {}
     };
@@ -477,20 +663,10 @@ export const getTaskStats = async (req, res) => {
       stats.by_type[task.task_type]++;
     });
 
-    // Staff workload
-    const staffWorkload = {};
-    allTasks.forEach(task => {
-      if (task.status === 'pending' || task.status === 'in_progress') {
-        const staffName = task.Users_Tasks_assigned_staff_id_fkey?.username || 'Unknown';
-        staffWorkload[staffName] = (staffWorkload[staffName] || 0) + 1;
-      }
-    });
-
     res.json({
       success: true,
       data: {
-        overview: stats,
-        staff_workload: staffWorkload
+        overview: stats
       }
     });
   } catch (error) {
