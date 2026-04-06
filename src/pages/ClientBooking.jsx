@@ -3,18 +3,6 @@ import { useNavigate, useLocation } from "react-router-dom";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
-// Load Razorpay script dynamically
-const loadRazorpayScript = () =>
-  new Promise((resolve) => {
-    if (document.getElementById("razorpay-script")) return resolve(true);
-    const s = document.createElement("script");
-    s.id = "razorpay-script";
-    s.src = "https://checkout.razorpay.com/v1/checkout.js";
-    s.onload = () => resolve(true);
-    s.onerror = () => resolve(false);
-    document.body.appendChild(s);
-  });
-
 export default function ClientBooking() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -103,6 +91,7 @@ export default function ClientBooking() {
     }
   };
 
+  // ── ONLY creates the booking (status: pending) then redirects to invoice ──
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!available) {
@@ -117,15 +106,7 @@ export default function ClientBooking() {
       const token = localStorage.getItem("token");
       const user = JSON.parse(localStorage.getItem("user"));
 
-      // ── STEP 1: Load Razorpay SDK ──────────────────────────────────────────
-      const loaded = await loadRazorpayScript();
-      if (!loaded) {
-        setError("Razorpay failed to load. Check your internet connection.");
-        setSubmitting(false);
-        return;
-      }
-
-      // ── STEP 2: Create booking with status "pending" ───────────────────────
+      // Create booking with status "pending"
       const bookingRes = await fetch(`${BASE_URL}/api/bookings`, {
         method: "POST",
         headers: {
@@ -139,7 +120,7 @@ export default function ClientBooking() {
           check_out_date: booking.check_out_date,
           guests:         booking.guests,
           total_price:    priceDetails.totalPrice,
-          booking_status: "pending",            // ← pending until paid
+          booking_status: "pending",
         })
       });
 
@@ -152,93 +133,11 @@ export default function ClientBooking() {
 
       const booking_id = bookingData.data.booking_id;
 
-      // ── STEP 3: Create Razorpay order + pending Invoice on backend ─────────
-      const orderRes = await fetch(`${BASE_URL}/api/payments/razorpay/create-order`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ booking_id })
-      });
-
-      const orderData = await orderRes.json();
-      if (!orderData.success) {
-        setError(orderData.error || "Failed to create payment order");
-        setSubmitting(false);
-        return;
-      }
-
-      const { order_id, amount, currency, invoice_id, key_id, prefill } = orderData.data;
-
-      // Calculate total with taxes for display
-      const totalWithTax = priceDetails.totalPrice + Math.round(priceDetails.totalPrice * 0.12) + 150;
-
-      // ── STEP 4: Open Razorpay checkout ─────────────────────────────────────
-      const options = {
-        key:         key_id,
-        amount,
-        currency,
-        name:        "BookInn",
-        description: `Room ${room.room_number} · ${priceDetails.nights} night${priceDetails.nights > 1 ? "s" : ""}`,
-        order_id,
-        prefill,
-        theme:       { color: "#4A7C72" },
-
-        handler: async (response) => {
-          // ── STEP 5: Verify payment on backend → saves to DB + sends email ──
-          try {
-            const verifyRes = await fetch(`${BASE_URL}/api/payments/razorpay/verify`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`
-              },
-              body: JSON.stringify({
-                razorpay_order_id:   response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature:  response.razorpay_signature,
-                invoice_id,
-                booking_id,
-              })
-            });
-
-            const verifyData = await verifyRes.json();
-
-            if (verifyData.success) {
-              // ── STEP 6: Go to invoice page ─────────────────────────────────
-              navigate(`/client/invoice/${booking_id}`);
-            } else {
-              setError("Payment verification failed. Please contact support.");
-              setSubmitting(false);
-            }
-          } catch (err) {
-            console.error("Verify error:", err);
-            setError("Verification error. Please contact support.");
-            setSubmitting(false);
-          }
-        },
-
-        modal: {
-          ondismiss: () => {
-            // User closed Razorpay modal without paying
-            setError("Payment was cancelled. Your booking is held for 10 minutes.");
-            setSubmitting(false);
-          }
-        }
-      };
-
-      const rzp = new window.Razorpay(options);
-
-      rzp.on("payment.failed", (resp) => {
-        setError(`Payment failed: ${resp.error.description}`);
-        setSubmitting(false);
-      });
-
-      rzp.open();
+      // Redirect to invoice page — payment happens from there
+      navigate(`/client/invoice/${booking_id}`);
 
     } catch (err) {
-      console.error("Booking/payment error:", err);
+      console.error("Booking error:", err);
       setError("Something went wrong. Please try again.");
       setSubmitting(false);
     }
@@ -262,7 +161,10 @@ export default function ClientBooking() {
     );
   }
 
-  const totalWithTax = priceDetails.totalPrice + Math.round(priceDetails.totalPrice * 0.12) + 150;
+  const totalWithTax =
+    priceDetails.totalPrice +
+    Math.round(priceDetails.totalPrice * 0.12) +
+    150;
 
   return (
     <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "40px" }}>
@@ -303,7 +205,10 @@ export default function ClientBooking() {
 
         {/* Right Column - Booking Form */}
         <div style={{ background: "white", padding: "30px", borderRadius: "16px", border: "1px solid #E4DDD4" }}>
-          <h2 style={{ marginBottom: "24px" }}>Book This Room</h2>
+          <h2 style={{ marginBottom: "8px" }}>Book This Room</h2>
+          <p style={{ color: "#6B6560", fontSize: "13px", marginBottom: "24px" }}>
+            Fill in your details — you'll pay on the next screen.
+          </p>
 
           {error && (
             <div style={{
@@ -382,6 +287,18 @@ export default function ClientBooking() {
               </div>
             )}
 
+            {/* Pending notice */}
+            <div style={{
+              background: "#FFF8E7", border: "1px solid #F0D070",
+              borderRadius: "8px", padding: "12px", marginBottom: "20px",
+              fontSize: "13px", color: "#7A5C00", display: "flex", alignItems: "flex-start", gap: "8px"
+            }}>
+              <span style={{ fontSize: "16px" }}>ℹ️</span>
+              <span>
+                Your booking will be saved as <strong>pending</strong>. You'll be taken to an invoice page where you can complete payment to confirm.
+              </span>
+            </div>
+
             <button
               type="submit"
               disabled={submitting || !available || !booking.check_in_date || !booking.check_out_date}
@@ -393,7 +310,7 @@ export default function ClientBooking() {
                 cursor: (!available || !booking.check_in_date || !booking.check_out_date) ? "not-allowed" : "pointer"
               }}
             >
-              {submitting ? "Opening Payment..." : "Confirm & Pay"}
+              {submitting ? "Creating Booking..." : "Confirm Booking →"}
             </button>
           </form>
         </div>

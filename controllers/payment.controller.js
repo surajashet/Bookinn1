@@ -58,30 +58,61 @@ export const createRazorpayOrder = async (req, res) => {
       notes:    { booking_id: String(booking_id), user_id: String(user.user_id) },
     });
 
-    const invoiceNumber = `INV-${String(booking_id).padStart(4, "0")}-${new Date().getFullYear()}`;
-
-    console.log("📋 Inserting invoice:", invoiceNumber);
-
-    const { data: invoice, error: invErr } = await supabase
+    // ── Check if a pending invoice already exists for this booking ──
+    const { data: existingInvoice } = await supabase
       .from("Invoices")
-      .insert([{
-        booking_id,
-        user_id:        user.user_id,
-        invoice_number: invoiceNumber,
-        base_amount,
-        cgst_amount,
-        sgst_amount,
-        total_tax,
-        total_amount,
-        payment_state:  "pending",
-        created_at:     new Date().toISOString(),
-      }])
-      .select()
-      .single();
+      .select("*")
+      .eq("booking_id", booking_id)
+      .eq("payment_state", "pending")
+      .maybeSingle();
 
-    if (invErr) {
-      console.error("❌ Invoice insert error:", invErr.message, invErr.details, invErr.hint);
-      throw new Error(`Invoice insert failed: ${invErr.message} | ${invErr.details || ""} | ${invErr.hint || ""}`);
+    let invoice;
+
+    if (existingInvoice) {
+      // Reuse the existing pending invoice — just update the amounts in case they changed
+      console.log("♻️  Reusing existing invoice:", existingInvoice.invoice_number);
+      const { data: updated, error: updateErr } = await supabase
+        .from("Invoices")
+        .update({
+          base_amount,
+          cgst_amount,
+          sgst_amount,
+          total_tax,
+          total_amount,
+        })
+        .eq("invoice_id", existingInvoice.invoice_id)
+        .select()
+        .single();
+
+      if (updateErr) throw updateErr;
+      invoice = updated;
+    } else {
+      // No pending invoice exists — create a fresh one
+      const invoiceNumber = `INV-${String(booking_id).padStart(4, "0")}-${new Date().getFullYear()}`;
+      console.log("📋 Inserting new invoice:", invoiceNumber);
+
+      const { data: inserted, error: invErr } = await supabase
+        .from("Invoices")
+        .insert([{
+          booking_id,
+          user_id:        user.user_id,
+          invoice_number: invoiceNumber,
+          base_amount,
+          cgst_amount,
+          sgst_amount,
+          total_tax,
+          total_amount,
+          payment_state:  "pending",
+          created_at:     new Date().toISOString(),
+        }])
+        .select()
+        .single();
+
+      if (invErr) {
+        console.error("❌ Invoice insert error:", invErr.message, invErr.details);
+        throw new Error(`Invoice insert failed: ${invErr.message} | ${invErr.details || ""}`);
+      }
+      invoice = inserted;
     }
 
     console.log("✅ Razorpay order created:", order.id);
@@ -93,7 +124,7 @@ export const createRazorpayOrder = async (req, res) => {
         amount:         order.amount,
         currency:       order.currency,
         invoice_id:     invoice.invoice_id,
-        invoice_number: invoiceNumber,
+        invoice_number: invoice.invoice_number,
         key_id:         process.env.RAZORPAY_KEY_ID,
         prefill: {
           name:  user.username,
@@ -195,15 +226,7 @@ export const verifyRazorpayPayment = async (req, res) => {
       await sendBookingConfirmation(booking, booking.Users, booking.rooms);
     }
 
-    // 9. Activity log
-    await supabase
-      .from("Activity Logs")
-      .insert([{
-        user_id:     booking?.Users?.user_id || null,
-        action:      "RAZORPAY_PAYMENT_SUCCESS",
-        entity_type: "payment",
-        description: `Razorpay payment ${razorpay_payment_id} verified for booking ${booking_id}`,
-      }]);
+    // ── Activity log intentionally removed ──
 
     console.log("✅ Payment verified, booking confirmed:", booking_id);
 
@@ -266,15 +289,6 @@ export const processPayment = async (req, res) => {
         .update({ booking_status: "confirmed", updated_at: new Date().toISOString() })
         .eq("booking_id", invoice.booking_id);
     }
-
-    await supabase
-      .from("Activity Logs")
-      .insert([{
-        user_id:     req.user?.id || null,
-        action:      "PROCESS_PAYMENT",
-        entity_type: "payment",
-        description: `Payment processed for invoice ${invoice_id}`,
-      }]);
 
     res.status(201).json({ success: true, message: "Payment processed successfully", data: payment });
   } catch (error) {
@@ -375,15 +389,6 @@ export const refundPayment = async (req, res) => {
       .from("Invoices")
       .update({ payment_state: "refunded" })
       .eq("invoice_id", payment.invoice_id);
-
-    await supabase
-      .from("Activity Logs")
-      .insert([{
-        user_id:     req.user?.id || null,
-        action:      "REFUND_PAYMENT",
-        entity_type: "payment",
-        description: `Payment ${payment_id} refunded: ${refund_reason || "No reason provided"}`,
-      }]);
 
     res.json({ success: true, message: "Payment refunded successfully", data });
   } catch (error) {

@@ -58,17 +58,16 @@ export default function ClientBookings() {
 
   const formatDate = (date) => {
     return new Date(date).toLocaleDateString("en-IN", {
-      day: "numeric",
-      month: "short",
-      year: "numeric"
+      day: "numeric", month: "short", year: "numeric"
     });
   };
 
   const getStatusBadge = (status) => {
     const styles = {
-      confirmed: { bg: "#e8f2ef", color: "#2d6b5e" },
-      cancelled: { bg: "#faeaea", color: "#8a3030" },
-      checked_in: { bg: "#e5f0ee", color: "#2d6b5e" },
+      confirmed:   { bg: "#e8f2ef", color: "#2d6b5e" },
+      pending:     { bg: "#FFF8E7", color: "#7A5C00" },
+      cancelled:   { bg: "#faeaea", color: "#8a3030" },
+      checked_in:  { bg: "#e5f0ee", color: "#2d6b5e" },
       checked_out: { bg: "#f0eff6", color: "#4a4070" }
     };
     const s = styles[status] || { bg: "#F0EBE4", color: "#6B6560" };
@@ -102,12 +101,8 @@ export default function ClientBookings() {
           <button
             onClick={() => navigate("/client/rooms")}
             style={{
-              background: "#4A7C72",
-              color: "white",
-              padding: "12px 24px",
-              border: "none",
-              borderRadius: "8px",
-              cursor: "pointer"
+              background: "#4A7C72", color: "white",
+              padding: "12px 24px", border: "none", borderRadius: "8px", cursor: "pointer"
             }}
           >
             Browse Rooms
@@ -116,23 +111,46 @@ export default function ClientBookings() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
           {bookings.map(booking => {
-            const nights = Math.ceil((new Date(booking.check_out_date) - new Date(booking.check_in_date)) / (1000 * 60 * 60 * 24));
-            
+            const nightCount = Math.ceil(
+              (new Date(booking.check_out_date) - new Date(booking.check_in_date)) / (1000 * 60 * 60 * 24)
+            );
+            const isPending   = booking.booking_status === "pending";
+            const isConfirmed = booking.booking_status === "confirmed";
+            const isCancelled = booking.booking_status === "cancelled";
+
             return (
               <div key={booking.booking_id} style={{
-                background: "white",
-                borderRadius: "12px",
-                border: "1px solid #E4DDD4",
-                overflow: "hidden"
+                background: "white", borderRadius: "12px",
+                border: isPending ? "1px solid #F0D070" : "1px solid #E4DDD4",
+                overflow: "hidden",
               }}>
+                {/* Pending payment reminder strip */}
+                {isPending && (
+                  <div style={{
+                    background: "#FFF8E7", borderBottom: "1px solid #F0D070",
+                    padding: "8px 20px", fontSize: "13px", color: "#7A5C00",
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+                  }}>
+                    <span>⏳ <strong>Payment pending</strong> — pay to confirm this booking</span>
+                    <button
+                      onClick={() => navigate(`/client/invoice/${booking.booking_id}`)}
+                      style={{
+                        background: "#4A7C72", color: "#fff", border: "none",
+                        padding: "5px 14px", borderRadius: "6px",
+                        fontSize: "12px", fontWeight: "bold", cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Pay Now →
+                    </button>
+                  </div>
+                )}
+
                 <div style={{
                   padding: "20px",
                   borderBottom: "1px solid #F0EBE4",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  gap: "12px"
+                  display: "flex", justifyContent: "space-between",
+                  alignItems: "center", flexWrap: "wrap", gap: "12px"
                 }}>
                   <div>
                     <h3 style={{ fontSize: "18px" }}>Room {booking.rooms?.room_number}</h3>
@@ -152,7 +170,7 @@ export default function ClientBookings() {
                   </div>
                   <div>
                     <div style={{ fontSize: "12px", color: "#A09890", marginBottom: "4px" }}>Nights</div>
-                    <div style={{ fontWeight: "bold" }}>{nights}</div>
+                    <div style={{ fontWeight: "bold" }}>{nightCount}</div>
                   </div>
                   <div>
                     <div style={{ fontSize: "12px", color: "#A09890", marginBottom: "4px" }}>Guests</div>
@@ -160,25 +178,100 @@ export default function ClientBookings() {
                   </div>
                   <div>
                     <div style={{ fontSize: "12px", color: "#A09890", marginBottom: "4px" }}>Total Amount</div>
-                    <div style={{ fontWeight: "bold", color: "#4A7C72" }}>₹{booking.total_price?.toLocaleString("en-IN") || 0}</div>
+                    <div style={{ fontWeight: "bold", color: "#4A7C72" }}>
+                      ₹{booking.total_price?.toLocaleString("en-IN") || 0}
+                    </div>
                   </div>
                 </div>
                 
-                {booking.booking_status === "confirmed" && (
-                  <div style={{ padding: "16px 20px", borderTop: "1px solid #F0EBE4", background: "#FDFCFB" }}>
+                {/* Actions footer — shown for all except cancelled */}
+                {!isCancelled && (
+                  <div style={{
+                    padding: "16px 20px", borderTop: "1px solid #F0EBE4",
+                    background: "#FDFCFB",
+                    display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap",
+                  }}>
+                    {/* View Invoice — always visible */}
                     <button
-                      onClick={() => cancelBooking(booking.booking_id)}
-                      disabled={cancelling === booking.booking_id}
+                      onClick={() => navigate(`/client/invoice/${booking.booking_id}`)}
                       style={{
-                        background: "#B45C5C",
-                        color: "white",
-                        border: "none",
-                        padding: "8px 16px",
-                        borderRadius: "6px",
-                        cursor: cancelling === booking.booking_id ? "not-allowed" : "pointer"
+                        background: "transparent",
+                        border: "1px solid #4A7C72",
+                        color: "#4A7C72",
+                        padding: "8px 16px", borderRadius: "6px",
+                        fontSize: "13px", cursor: "pointer",
+                        display: "flex", alignItems: "center", gap: "6px",
                       }}
                     >
-                      {cancelling === booking.booking_id ? "Cancelling..." : "Cancel Booking"}
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="16" y1="13" x2="8" y2="13"/>
+                        <line x1="16" y1="17" x2="8" y2="17"/>
+                        <polyline points="10 9 9 9 8 9"/>
+                      </svg>
+                      View Invoice
+                    </button>
+
+                    {/* Pay Now — only for pending */}
+                    {isPending && (
+                      <button
+                        onClick={() => navigate(`/client/invoice/${booking.booking_id}`)}
+                        style={{
+                          background: "#4A7C72", color: "white",
+                          border: "none", padding: "8px 16px",
+                          borderRadius: "6px", fontSize: "13px",
+                          fontWeight: "bold", cursor: "pointer",
+                          display: "flex", alignItems: "center", gap: "6px",
+                        }}
+                      >
+                        💳 Pay Now
+                      </button>
+                    )}
+
+                    {/* Cancel — for pending and confirmed */}
+                    {(isPending || isConfirmed) && (
+                      <button
+                        onClick={() => cancelBooking(booking.booking_id)}
+                        disabled={cancelling === booking.booking_id}
+                        style={{
+                          background: "#B45C5C", color: "white",
+                          border: "none", padding: "8px 16px",
+                          borderRadius: "6px",
+                          cursor: cancelling === booking.booking_id ? "not-allowed" : "pointer",
+                          fontSize: "13px",
+                          opacity: cancelling === booking.booking_id ? 0.6 : 1,
+                        }}
+                      >
+                        {cancelling === booking.booking_id ? "Cancelling..." : "Cancel Booking"}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Cancelled state footer */}
+                {isCancelled && (
+                  <div style={{
+                    padding: "12px 20px", borderTop: "1px solid #F0EBE4",
+                    background: "#FDFCFB",
+                    display: "flex", alignItems: "center", gap: "12px",
+                  }}>
+                    <button
+                      onClick={() => navigate(`/client/invoice/${booking.booking_id}`)}
+                      style={{
+                        background: "transparent",
+                        border: "1px solid #A09890",
+                        color: "#6B6560",
+                        padding: "8px 16px", borderRadius: "6px",
+                        fontSize: "13px", cursor: "pointer",
+                        display: "flex", alignItems: "center", gap: "6px",
+                      }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                      </svg>
+                      View Invoice
                     </button>
                   </div>
                 )}
