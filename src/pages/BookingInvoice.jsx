@@ -28,17 +28,14 @@ const T = {
   ink: "#1E1C1A", inkLight: "#6B6560", inkFaint: "#A09890",
   teal: "#4A7C72", tealLight: "#6A9E94", tealBg: "#EBF3F1",
   confirmed: { bg: "#e8f2ef", c: "#2d6b5e" },
-  pending: { bg: "#FFF8E7", c: "#7A5C00", border: "#F0D070" },
+  pending:   { bg: "#FFF8E7", c: "#7A5C00", border: "#F0D070" },
   cancelled: { bg: "#faeaea", c: "#8a3030" },
 };
-
-
 
 export default function BookingInvoice() {
   const { id } = useParams();
   const navigate = useNavigate();
   const printRef = useRef();
-  const autoCancelledRef = useRef(false);
 
   const [booking, setBooking] = useState(null);
   const [invoice, setInvoice] = useState(null);
@@ -83,30 +80,6 @@ export default function BookingInvoice() {
     }
   };
 
-  const { secondsLeft, expired } = usePaymentCountdown(
-    booking?.booking_status === "pending" ? booking?.created_at : null
-  );
-
-  useEffect(() => {
-    if (expired && booking?.booking_status === "pending" && !autoCancelledRef.current) {
-      autoCancelledRef.current = true;
-      autoCancel();
-    }
-  }, [expired, booking?.booking_status]);
-
-  const autoCancel = async () => {
-    try {
-      const token = localStorage.getItem("token");
-      await fetch(`${BASE_URL}/api/bookings/${id}/cancel`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      await fetchInvoiceData();
-    } catch (err) {
-      console.error("Auto-cancel failed:", err);
-    }
-  };
-
   const handlePayNow = async () => {
     setPaying(true);
     setPayError("");
@@ -140,40 +113,29 @@ export default function BookingInvoice() {
         order_id,
         prefill,
         theme: { color: "#4A7C72" },
-
-        // ── FIX: Show UPI + all payment methods, disable saved cards ──
+        // Separated UPI and Netbanking into distinct blocks
         config: {
           display: {
             blocks: {
-              banks: {
-                name: "Pay via UPI / Netbanking",
-                instruments: [
-                  { method: "upi" },
-                  { method: "netbanking" },
-                ],
-              },
-              cards: {
-                name: "Pay via Cards",
-                instruments: [{ method: "card" }],
-              },
+              upi: { name: "Pay via UPI", instruments: [{ method: "upi" }] },
+              banks: { name: "Pay via Netbanking", instruments: [{ method: "netbanking" }] },
+              cards: { name: "Pay via Cards", instruments: [{ method: "card" }] },
             },
-            sequence: ["block.banks", "block.cards"],
+            sequence: ["block.upi", "block.banks", "block.cards"],
             preferences: { show_default_blocks: true },
           },
         },
-        // Disables Razorpay's "save this card" feature — fixes the
-        // "saved card fails but fresh card works" test mode bug
+        // Disable saved cards — fixes "saved card fails but new card works" bug
         save: 0,
-
         handler: async (response) => {
           try {
             const verifyRes = await fetch(`${BASE_URL}/api/payments/razorpay/verify`, {
               method: "POST",
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
               body: JSON.stringify({
-                razorpay_order_id: response.razorpay_order_id,
+                razorpay_order_id:   response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature,
+                razorpay_signature:  response.razorpay_signature,
                 invoice_id,
                 booking_id: booking.booking_id,
               })
@@ -193,7 +155,7 @@ export default function BookingInvoice() {
         modal: {
           backdropclose: false,
           ondismiss: () => {
-            setPayError("Payment cancelled. Complete payment before the timer runs out.");
+            setPayError("Payment cancelled. You can pay anytime from this page.");
             setPaying(false);
           },
         },
@@ -255,33 +217,29 @@ export default function BookingInvoice() {
     </div>
   );
 
-  const user = JSON.parse(localStorage.getItem("user") || "{}");
-  const guestName = user.username || user.name || "Guest";
-  const guestEmail = user.email || "—";
-  const roomNumber = booking.rooms?.room_number || "—";
-  const roomType = booking.rooms?.room_type || "—";
-  const n = nights(booking.check_in_date, booking.check_out_date);
-  const roomCharge = Number(booking.total_price) || 0;
+  const user        = JSON.parse(localStorage.getItem("user") || "{}");
+  const guestName   = user.username || user.name || "Guest";
+  const guestEmail  = user.email || "—";
+  const roomNumber  = booking.rooms?.room_number || "—";
+  const roomType    = booking.rooms?.room_type || "—";
+  const n           = nights(booking.check_in_date, booking.check_out_date);
+  const roomCharge  = Number(booking.total_price) || 0;
   const ratePerNight = n > 0 ? roomCharge / n : roomCharge;
-  const taxes = Math.round(roomCharge * 0.12);
-  const serviceFee = 150;
-  const total = roomCharge + taxes + serviceFee;
+  const taxes       = Math.round(roomCharge * 0.12);
+  const serviceFee  = 150;
+  const total       = roomCharge + taxes + serviceFee;
 
-  const isPending = booking.booking_status === "pending";
+  const isPending   = booking.booking_status === "pending";
   const isConfirmed = booking.booking_status === "confirmed";
   const isCancelled = booking.booking_status === "cancelled";
 
-  const mins = String(Math.floor(secondsLeft / 60)).padStart(2, "0");
-  const secs = String(secondsLeft % 60).padStart(2, "0");
-  const isUrgent = secondsLeft <= 120;
-
   const StatusBadge = ({ status }) => {
     const map = {
-      confirmed: { bg: T.confirmed.bg, c: T.confirmed.c },
-      pending: { bg: T.pending.bg, c: T.pending.c },
-      cancelled: { bg: T.cancelled.bg, c: T.cancelled.c },
-      checked_in: { bg: T.confirmed.bg, c: T.confirmed.c },
-      checked_out: { bg: "#f0eff6", c: "#4a4070" },
+      confirmed:   { bg: T.confirmed.bg, c: T.confirmed.c },
+      pending:     { bg: T.pending.bg,   c: T.pending.c   },
+      cancelled:   { bg: T.cancelled.bg, c: T.cancelled.c },
+      checked_in:  { bg: T.confirmed.bg, c: T.confirmed.c },
+      checked_out: { bg: "#f0eff6",      c: "#4a4070"     },
     };
     const s = map[status] || { bg: "#F0EBE4", c: "#6B6560" };
     return (
@@ -294,46 +252,27 @@ export default function BookingInvoice() {
   return (
     <div style={{ minHeight: "100vh", background: T.parchment, display: "flex", flexDirection: "column", alignItems: "center", padding: "64px 24px" }}>
 
-      {/* PENDING BANNER with countdown */}
+      {/* PENDING BANNER */}
       {isPending && (
-        <div style={{
-          width: "100%", maxWidth: 760, marginBottom: 24,
-          background: isUrgent ? "#FFF0F0" : T.pending.bg,
-          border: `1px solid ${isUrgent ? "#E87070" : T.pending.border}`,
-          borderRadius: 16, padding: "20px 28px",
-        }}>
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 16, marginBottom: 16 }}>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-              <span style={{ fontSize: 28, lineHeight: 1 }}>{isUrgent ? "🚨" : "⏳"}</span>
-              <div>
-                <div style={{ fontWeight: "bold", color: isUrgent ? "#8a3030" : T.pending.c, fontSize: 16, marginBottom: 4 }}>
-                  {expired ? "Booking Expired" : "Payment Pending"}
-                </div>
-                <div style={{ fontSize: 13, color: isUrgent ? "#8a3030" : "#7A5C00", lineHeight: 1.5 }}>
-                  {expired
-                    ? "Time ran out. This booking has been automatically cancelled."
-                    : "Your booking is reserved but not yet confirmed. Pay before the timer runs out."}
-                </div>
+        <div style={{ width: "100%", maxWidth: 760, marginBottom: 24, background: T.pending.bg, border: `1px solid ${T.pending.border}`, borderRadius: 16, padding: "20px 28px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+            <span style={{ fontSize: 28 }}>⏳</span>
+            <div>
+              <div style={{ fontWeight: "bold", color: T.pending.c, fontSize: 16, marginBottom: 4 }}>Payment Pending</div>
+              <div style={{ fontSize: 13, color: "#7A5C00", lineHeight: 1.5 }}>
+                Your booking is reserved but <strong>not yet confirmed</strong>. Complete payment to lock in your stay.
               </div>
             </div>
-            {!expired && (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", background: isUrgent ? "#8a3030" : "#7A5C00", color: "#fff", borderRadius: 12, padding: "10px 20px", minWidth: 90 }}>
-                <div style={{ fontSize: 28, fontWeight: "bold", fontFamily: "monospace", lineHeight: 1 }}>{mins}:{secs}</div>
-                <div style={{ fontSize: 10, opacity: 0.8, marginTop: 4, letterSpacing: ".08em" }}>TIME LEFT</div>
-              </div>
-            )}
           </div>
-          {!expired && (
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-              {payError && <div style={{ fontSize: 12, color: "#c00", alignSelf: "center", flex: 1 }}>{payError}</div>}
-              <button onClick={handleCancel} disabled={cancelling} style={{ background: "transparent", border: "1px solid #B45C5C", color: "#B45C5C", padding: "10px 20px", borderRadius: 8, fontSize: 13, cursor: cancelling ? "not-allowed" : "pointer", opacity: cancelling ? 0.6 : 1 }}>
-                {cancelling ? "Cancelling..." : "Cancel Booking"}
-              </button>
-              <button onClick={handlePayNow} disabled={paying} style={{ background: isUrgent ? "#8a3030" : T.teal, color: "#fff", border: "none", padding: "10px 28px", borderRadius: 8, fontSize: 14, fontWeight: "bold", cursor: paying ? "not-allowed" : "pointer", opacity: paying ? 0.7 : 1, display: "flex", alignItems: "center", gap: 8 }}>
-                {paying ? <>⏳ Opening Payment...</> : <>💳 Pay Now to Confirm</>}
-              </button>
-            </div>
-          )}
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {payError && <div style={{ fontSize: 12, color: "#c00", alignSelf: "center", maxWidth: 200 }}>{payError}</div>}
+            <button onClick={handleCancel} disabled={cancelling} style={{ background: "transparent", border: "1px solid #B45C5C", color: "#B45C5C", padding: "10px 20px", borderRadius: 8, fontSize: 13, cursor: cancelling ? "not-allowed" : "pointer", opacity: cancelling ? 0.6 : 1 }}>
+              {cancelling ? "Cancelling..." : "Cancel Booking"}
+            </button>
+            <button onClick={handlePayNow} disabled={paying} style={{ background: T.teal, color: "#fff", border: "none", padding: "10px 28px", borderRadius: 8, fontSize: 14, fontWeight: "bold", cursor: paying ? "not-allowed" : "pointer", opacity: paying ? 0.7 : 1, display: "flex", alignItems: "center", gap: 8 }}>
+              {paying ? <>⏳ Opening Payment...</> : <>💳 Pay Now to Confirm</>}
+            </button>
+          </div>
         </div>
       )}
 
@@ -361,7 +300,7 @@ export default function BookingInvoice() {
           <div style={{ fontStyle: "italic", fontSize: 28, color: T.ink, lineHeight: 1 }}>Invoice</div>
         </div>
         <div style={{ display: "flex", gap: 12 }}>
-          {isPending && !expired && (
+          {isPending && (
             <button onClick={handlePayNow} disabled={paying} style={{ background: T.teal, color: "#fff", border: "none", padding: "9px 22px", borderRadius: 999, fontSize: 10, letterSpacing: ".18em", textTransform: "uppercase", cursor: paying ? "not-allowed" : "pointer", opacity: paying ? 0.7 : 1 }}>
               {paying ? "Opening..." : "Pay Now"}
             </button>
@@ -423,8 +362,8 @@ export default function BookingInvoice() {
           </div>
           {[
             { desc: `Room ${roomNumber} — ${roomType}`, sub: `${fmtShort(booking.check_in_date)} → ${fmtShort(booking.check_out_date)}`, rate: INR(ratePerNight), qty: `${n} night${n > 1 ? "s" : ""}`, amount: INR(roomCharge) },
-            { desc: "GST & Taxes", sub: "12% on room charge", rate: "12%", qty: "—", amount: INR(taxes) },
-            { desc: "Service Fee", sub: "Platform & amenity charge", rate: "—", qty: "—", amount: INR(serviceFee) },
+            { desc: "GST & Taxes",  sub: "12% on room charge",        rate: "12%", qty: "—", amount: INR(taxes) },
+            { desc: "Service Fee",  sub: "Platform & amenity charge", rate: "—",   qty: "—", amount: INR(serviceFee) },
           ].map((row, i, arr) => (
             <div key={i} style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", padding: "18px 0", borderBottom: i < arr.length - 1 ? `1px solid ${T.parchmentMid}` : "none", alignItems: "center" }}>
               <div>
@@ -446,12 +385,12 @@ export default function BookingInvoice() {
           </div>
           <div style={{ textAlign: "right" }}>
             <div style={{ fontStyle: "italic", fontSize: 36, color: T.teal, lineHeight: 1 }}>{INR(total)}</div>
-            {isPending && !expired && <div style={{ fontSize: 11, color: T.pending.c, marginTop: 8, fontWeight: "bold" }}>⚠️ Payment required to confirm</div>}
+            {isPending && <div style={{ fontSize: 11, color: T.pending.c, marginTop: 8, fontWeight: "bold" }}>⚠️ Payment required to confirm</div>}
           </div>
         </div>
 
-        {/* Pay CTA */}
-        {isPending && !expired && (
+        {/* Pay CTA inside invoice — pending only */}
+        {isPending && (
           <div style={{ margin: "0 48px 40px" }}>
             {payError && <div style={{ background: "#fee", color: "#c00", padding: "10px 16px", borderRadius: 8, marginBottom: 12, fontSize: 13 }}>{payError}</div>}
             <button onClick={handlePayNow} disabled={paying} style={{ width: "100%", padding: "16px", background: paying ? "#95B6B0" : T.teal, color: "#fff", border: "none", borderRadius: 12, fontSize: 16, fontWeight: "bold", cursor: paying ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>

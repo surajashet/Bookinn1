@@ -223,7 +223,14 @@ export const verifyRazorpayPayment = async (req, res) => {
 
     // 8. Send confirmation email + PDF invoice
     if (booking) {
-      await sendBookingConfirmation(booking, booking.Users, booking.rooms);
+      // Fetch the paid invoice to include in the PDF
+      const { data: paidInvoice } = await supabase
+        .from("Invoices")
+        .select("*")
+        .eq("invoice_id", invoice_id)
+        .single();
+
+      await sendBookingConfirmation(booking, booking.Users, booking.rooms, paidInvoice);
     }
 
     // ── Activity log intentionally removed ──
